@@ -1,0 +1,71 @@
+# Render Blueprint para HC (fase de pruebas, plan free).
+# Importar desde el dashboard de Render: "New +" -> "Blueprint" -> apuntar al repo.
+# Los envVars con `sync: false` se completan a mano en el dashboard (no se versionan).
+
+databases:
+  - name: hc-db
+    databaseName: hc
+    plan: free
+
+services:
+  # --- API (NestJS, corre con ts-node) ---
+  - type: web
+    name: hc-api
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm run start:prod -w @hc/api
+    healthCheckPath: /api/docs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TS_NODE_TRANSPILE_ONLY   # arranque rapido: ts-node no typechequea en runtime
+        value: "true"
+      - key: DB_TYPE
+        value: postgres
+      - key: DB_SSL
+        value: "true"
+      - key: DB_SYNCHRONIZE            # OK para pruebas (crea tablas); prod real -> false
+        value: "true"
+      - key: DB_LOGGING
+        value: "false"
+      - key: DB_HOST
+        fromDatabase: { name: hc-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: hc-db, property: port }
+      - key: DB_USER
+        fromDatabase: { name: hc-db, property: user }
+      - key: DB_PASSWORD
+        fromDatabase: { name: hc-db, property: password }
+      - key: DB_NAME
+        fromDatabase: { name: hc-db, property: database }
+      - key: CORS_ORIGIN               # URL del frontend, ej: https://hc-frontend.onrender.com
+        sync: false
+      - key: GCLOUD_PROJECT            # id del proyecto Firebase real
+        sync: false
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON   # pegar el JSON del service account (secret)
+        sync: false
+
+  # --- Frontend (Vue + Vite, sitio estatico) ---
+  - type: web
+    name: hc-frontend
+    runtime: static
+    buildCommand: npm install && npm run build -w @hc/frontend
+    staticPublishPath: packages/frontend/dist
+    routes:
+      - type: rewrite              # SPA: todo a index.html
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL          # https://hc-api.onrender.com/api
+        sync: false
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false

@@ -17,7 +17,12 @@ async function bootstrap(): Promise<void> {
 
   app.setGlobalPrefix('api');
   app.use(json({ limit: '5mb' }));
-  app.enableCors({ origin: true, credentials: true });
+
+  // En prod, CORS_ORIGIN = lista de origenes permitidos (coma). Sin definir => abierto (dev).
+  const corsOrigin = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : true;
+  app.enableCors({ origin: corsOrigin, credentials: true });
 
   app.useGlobalPipes(
     new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }),

@@ -28,7 +28,7 @@ import { AuditoriaModule } from './modules/auditoria/auditoria.module';
   ],
   providers: [
     { provide: APP_GUARD, useClass: FirebaseAuthGuard },
-    { provide: APP_INTERCEPTOR, useClass: AuthContextInterceptor },
+    { provide: APP_INTERCEPTOR, useExisting: AuthContextInterceptor },
   ],
 })
 export class AppModule implements NestModule {

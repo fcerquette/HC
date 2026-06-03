@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { Sexo } from '@hc/shared'
 import apiClient from '@/api/client'
 
 interface Paciente {
@@ -7,7 +8,7 @@ interface Paciente {
   apellido: string
   nombre: string
   dni: string
-  fechaNac?: string
+  fechaNacimiento?: string
   sexo?: string
   contacto?: string
   mail?: string
@@ -31,7 +32,7 @@ function emptyForm(): NuevoPaciente {
     apellido: '',
     nombre: '',
     dni: '',
-    fechaNac: '',
+    fechaNacimiento: '',
     sexo: '',
     contacto: '',
     mail: '',
@@ -58,7 +59,11 @@ async function crearPaciente() {
   saving.value = true
   error.value = ''
   try {
-    await apiClient.post('/pacientes', form.value)
+    // Los opcionales vacios se omiten: '' no pasa @IsEnum/@IsString opcional en el backend.
+    const payload = Object.fromEntries(
+      Object.entries(form.value).filter(([, v]) => v !== '' && v != null),
+    )
+    await apiClient.post('/pacientes', payload)
     form.value = emptyForm()
     showForm.value = false
     await fetchPacientes()
@@ -85,8 +90,13 @@ onMounted(fetchPacientes)
       <input v-model="form.apellido" placeholder="Apellido" required />
       <input v-model="form.nombre" placeholder="Nombre" required />
       <input v-model="form.dni" placeholder="DNI" required />
-      <input v-model="form.fechaNac" type="date" placeholder="Fecha nac." />
-      <input v-model="form.sexo" placeholder="Sexo" />
+      <input v-model="form.fechaNacimiento" type="date" placeholder="Fecha nac." />
+      <select v-model="form.sexo">
+        <option value="">Sexo…</option>
+        <option :value="Sexo.Masculino">Masculino</option>
+        <option :value="Sexo.Femenino">Femenino</option>
+        <option :value="Sexo.Otro">Otro</option>
+      </select>
       <input v-model="form.contacto" placeholder="Contacto" />
       <input v-model="form.mail" type="email" placeholder="Mail" />
       <input v-model="form.direccion" placeholder="Dirección" />

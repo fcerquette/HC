@@ -12,6 +12,8 @@ function buildOptions(): DataSourceOptions {
     entities: [join(__dirname, '..', 'modules', '**', 'entities', '*.{ts,js}')],
     synchronize: process.env.DB_SYNCHRONIZE === 'true',
     logging: process.env.DB_LOGGING === 'true',
+    // Render (y la mayoria de Postgres gestionados) exigen SSL.
+    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : undefined,
   };
 }
 

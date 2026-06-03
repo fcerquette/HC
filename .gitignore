@@ -9,6 +9,8 @@ lib/
 .env
 .env.local
 .env.*.local
+# el .env.development del API tiene credenciales locales -> no versionar
+packages/api/.env.development
 
 # firebase
 firebase-service-account.json

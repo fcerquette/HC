@@ -11,6 +11,14 @@ export function initFirebase(): admin.app.App {
     return app;
   }
 
+  // Opcion PaaS (Render/Cloud Run): el service account como JSON en una env var.
+  const saJson = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  if (saJson) {
+    const serviceAccount = JSON.parse(saJson);
+    app = admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    return app;
+  }
+
   const saPath = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (saPath && existsSync(saPath)) {
     const serviceAccount = JSON.parse(readFileSync(saPath, 'utf-8'));

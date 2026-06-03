@@ -30,7 +30,7 @@ export class Usuario {
   @Column()
   apellido: string;
 
-  @Column({ nullable: true })
+  @Column({ type: 'varchar', nullable: true })
   matricula: string | null;
 
   @Column({ default: true })
