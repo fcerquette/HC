@@ -22,6 +22,7 @@ export class FichaPacienteService {
         companyId: AsyncContextHelper.companyId ?? null,
         pacienteId: dto.pacienteId,
         plantillaId: dto.plantillaId,
+        fecha: dto.fecha ?? null,
         data: dto.data ?? {},
       }),
     );

@@ -15,6 +15,8 @@ interface Paciente {
   direccion?: string
   localidad?: string
   obraSocial?: string
+  peso?: string
+  talla?: string
 }
 
 type NuevoPaciente = Omit<Paciente, 'id'>
@@ -39,6 +41,8 @@ function emptyForm(): NuevoPaciente {
     direccion: '',
     localidad: '',
     obraSocial: '',
+    peso: '',
+    talla: '',
   }
 }
 
@@ -102,6 +106,8 @@ onMounted(fetchPacientes)
       <input v-model="form.direccion" placeholder="Dirección" />
       <input v-model="form.localidad" placeholder="Localidad" />
       <input v-model="form.obraSocial" placeholder="Obra social" />
+      <input v-model="form.peso" placeholder="Peso" />
+      <input v-model="form.talla" placeholder="Talla" />
       <button type="submit" :disabled="saving">
         {{ saving ? 'Guardando...' : 'Guardar' }}
       </button>

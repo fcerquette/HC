@@ -19,4 +19,7 @@ export class Visita extends BaseTenantEntity {
 
   @Column({ type: 'text', default: '' })
   evolucion: string;
+
+  @Column({ type: 'text', nullable: true })
+  conducta: string | null;
 }

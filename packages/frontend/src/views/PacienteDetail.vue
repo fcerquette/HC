@@ -18,11 +18,14 @@ interface Paciente {
   direccion?: string
   localidad?: string
   obraSocial?: string
+  peso?: string
+  talla?: string
 }
 
 interface FichaPaciente {
   id: number
   plantillaId: number
+  fecha?: string | null
   data: Record<string, unknown>
 }
 
@@ -39,6 +42,7 @@ interface Visita {
   fecha: string
   motivo: string
   evolucion: string
+  conducta?: string
   createdAt?: string
 }
 
@@ -50,7 +54,7 @@ const loading = ref(false)
 const error = ref('')
 
 const saving = ref(false)
-const nuevaVisita = ref({ fecha: '', motivo: '', evolucion: '' })
+const nuevaVisita = ref({ fecha: '', motivo: '', evolucion: '', conducta: '' })
 
 const editing = ref(false)
 const savingPaciente = ref(false)
@@ -70,12 +74,15 @@ const CAMPOS_EDITABLES = [
   'direccion',
   'localidad',
   'obraSocial',
+  'peso',
+  'talla',
 ] as const
 
 // --- Fichas (configurables por plantilla) ---
 const fichaMode = ref<'none' | 'create' | 'edit'>('none')
 const fichaForm = ref<Record<string, any>>({})
 const fichaPlantillaId = ref<number | null>(null)
+const fichaFecha = ref<string>('')
 const fichaEnEdicionId = ref<number | null>(null)
 const savingFicha = ref(false)
 
@@ -85,10 +92,54 @@ const plantillaMap = computed<Record<number, Plantilla>>(() => {
   return m
 })
 
-const activeCampos = computed<CampoFicha[]>(() => {
-  const p = fichaPlantillaId.value != null ? plantillaMap.value[fichaPlantillaId.value] : undefined
-  return p?.schema?.campos ?? []
-})
+const activePlantilla = computed<Plantilla | undefined>(() =>
+  fichaPlantillaId.value != null ? plantillaMap.value[fichaPlantillaId.value] : undefined,
+)
+
+const activeEsTabla = computed(() => activePlantilla.value?.schema?.vista === 'tabla')
+
+const activeCampos = computed<CampoFicha[]>(() => activePlantilla.value?.schema?.campos ?? [])
+
+// Plantillas con vista "tabla" (ej. Laboratorio) que tienen al menos una ficha cargada.
+const plantillasTabla = computed<Plantilla[]>(() =>
+  plantillas.value.filter(
+    (p) => p.schema?.vista === 'tabla' && fichas.value.some((f) => f.plantillaId === p.id),
+  ),
+)
+
+// Fichas que se muestran como tarjeta (las que NO son de vista tabla).
+const fichasNormales = computed<FichaPaciente[]>(() =>
+  fichas.value.filter((f) => plantillaMap.value[f.plantillaId]?.schema?.vista !== 'tabla'),
+)
+
+// Fichas de una plantilla, ordenadas por fecha (para las columnas del pivot).
+function fichasDePlantilla(plantillaId: number): FichaPaciente[] {
+  return fichas.value
+    .filter((f) => f.plantillaId === plantillaId)
+    .sort((a, b) => (a.fecha ?? '').localeCompare(b.fecha ?? ''))
+}
+
+/** Agrupa los campos por `seccion`, preservando el orden de aparicion. */
+function agruparPorSeccion(campos: CampoFicha[]): { seccion: string | null; campos: CampoFicha[] }[] {
+  const grupos: { seccion: string | null; campos: CampoFicha[] }[] = []
+  const idx = new Map<string | null, number>()
+  for (const campo of campos) {
+    const sec = campo.seccion ?? null
+    if (!idx.has(sec)) {
+      idx.set(sec, grupos.length)
+      grupos.push({ seccion: sec, campos: [] })
+    }
+    grupos[idx.get(sec)!].campos.push(campo)
+  }
+  return grupos
+}
+
+const activeGrupos = computed(() => agruparPorSeccion(activeCampos.value))
+
+function gruposDe(plantillaId: number) {
+  const p = plantillaMap.value[plantillaId]
+  return p ? agruparPorSeccion(p.schema?.campos ?? []) : []
+}
 
 function valorPorDefecto(campo: CampoFicha): unknown {
   return campo.tipo === TipoCampoFicha.Booleano ? false : ''
@@ -107,6 +158,7 @@ function startNuevaFicha() {
   fichaMode.value = 'create'
   fichaEnEdicionId.value = null
   fichaPlantillaId.value = null
+  fichaFecha.value = ''
   fichaForm.value = {}
 }
 
@@ -114,6 +166,7 @@ function startEditFicha(f: FichaPaciente) {
   fichaMode.value = 'edit'
   fichaEnEdicionId.value = f.id
   fichaPlantillaId.value = f.plantillaId
+  fichaFecha.value = f.fecha ?? ''
   const p = plantillaMap.value[f.plantillaId]
   const form: Record<string, any> = {}
   for (const campo of p?.schema?.campos ?? []) {
@@ -157,6 +210,7 @@ async function guardarFicha() {
       await apiClient.post('/fichas', {
         pacienteId: Number(props.id),
         plantillaId: fichaPlantillaId.value,
+        fecha: fichaFecha.value || undefined,
         data,
       })
     } else {
@@ -214,6 +268,19 @@ function formatValue(value: unknown): string {
   return String(value)
 }
 
+/** Convierte una fecha ISO (yyyy-mm-dd o yyyy-mm-ddT...) a dd/mm/aaaa para mostrar. */
+function formatFecha(value: unknown): string {
+  if (!value) return ''
+  const m = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(value)
+}
+
+/** Muestra el valor de un campo, formateando las fechas como dd/mm/aaaa. */
+function formatCampo(campo: CampoFicha, value: unknown): string {
+  if (campo.tipo === TipoCampoFicha.Fecha) return value ? formatFecha(value) : '—'
+  return formatValue(value)
+}
+
 async function fetchAll() {
   loading.value = true
   error.value = ''
@@ -244,8 +311,9 @@ async function agregarVisita() {
       fecha: nuevaVisita.value.fecha,
       motivo: nuevaVisita.value.motivo,
       evolucion: nuevaVisita.value.evolucion,
+      conducta: nuevaVisita.value.conducta,
     })
-    nuevaVisita.value = { fecha: '', motivo: '', evolucion: '' }
+    nuevaVisita.value = { fecha: '', motivo: '', evolucion: '', conducta: '' }
     const { data } = await apiClient.get<Visita[]>(`/pacientes/${props.id}/visitas`)
     visitas.value = data
   } catch (e) {
@@ -276,13 +344,15 @@ onMounted(fetchAll)
 
         <dl v-if="!editing" class="detalle__dl">
           <dt>DNI</dt><dd>{{ paciente.dni }}</dd>
-          <dt>Fecha nac.</dt><dd>{{ paciente.fechaNacimiento }}</dd>
+          <dt>Fecha nac.</dt><dd>{{ formatFecha(paciente.fechaNacimiento) }}</dd>
           <dt>Sexo</dt><dd>{{ paciente.sexo ? SEXO_LABEL[paciente.sexo] : '' }}</dd>
           <dt>Contacto</dt><dd>{{ paciente.contacto }}</dd>
           <dt>Mail</dt><dd>{{ paciente.mail }}</dd>
           <dt>Dirección</dt><dd>{{ paciente.direccion }}</dd>
           <dt>Localidad</dt><dd>{{ paciente.localidad }}</dd>
           <dt>Obra social</dt><dd>{{ paciente.obraSocial }}</dd>
+          <dt>Peso</dt><dd>{{ paciente.peso }}</dd>
+          <dt>Talla</dt><dd>{{ paciente.talla }}</dd>
         </dl>
 
         <form v-else class="detalle__form detalle__form--grid" @submit.prevent="guardarPaciente">
@@ -301,6 +371,8 @@ onMounted(fetchAll)
           <input v-model="editForm.direccion" placeholder="Dirección" />
           <input v-model="editForm.localidad" placeholder="Localidad" />
           <input v-model="editForm.obraSocial" placeholder="Obra social" />
+          <input v-model="editForm.peso" placeholder="Peso" />
+          <input v-model="editForm.talla" placeholder="Talla" />
           <div class="detalle__form-actions">
             <button type="submit" :disabled="savingPaciente">
               {{ savingPaciente ? 'Guardando...' : 'Guardar cambios' }}
@@ -338,51 +410,61 @@ onMounted(fetchAll)
             </select>
           </label>
 
-          <div v-for="campo in activeCampos" :key="campo.code" class="detalle__campo">
-            <span class="detalle__campo-label">
-              {{ campo.label }}<em v-if="campo.requerido"> *</em>
-            </span>
+          <label v-if="activeEsTabla" class="detalle__campo">
+            <span class="detalle__campo-label">Fecha<em> *</em></span>
+            <input v-if="fichaMode === 'create'" type="date" v-model="fichaFecha" required />
+            <span v-else>{{ fichaFecha ? formatFecha(fichaFecha) : '—' }}</span>
+          </label>
 
-            <textarea
-              v-if="campo.tipo === TipoCampoFicha.TextoLargo"
-              v-model="fichaForm[campo.code]"
-              rows="3"
-              :required="campo.requerido"
-            ></textarea>
+          <div v-for="grupo in activeGrupos" :key="grupo.seccion ?? '_'" class="detalle__seccion">
+            <h4 v-if="grupo.seccion" class="detalle__seccion-titulo">{{ grupo.seccion }}</h4>
 
-            <label v-else-if="campo.tipo === TipoCampoFicha.Booleano" class="detalle__check">
-              <input type="checkbox" v-model="fichaForm[campo.code]" /> Sí
-            </label>
+            <div v-for="campo in grupo.campos" :key="campo.code" class="detalle__campo">
+              <span class="detalle__campo-label">
+                {{ campo.label }}<em v-if="campo.requerido"> *</em>
+              </span>
 
-            <select
-              v-else-if="campo.tipo === TipoCampoFicha.Seleccion"
-              v-model="fichaForm[campo.code]"
-              :required="campo.requerido"
-            >
-              <option value="">—</option>
-              <option v-for="op in campo.opciones ?? []" :key="op" :value="op">{{ op }}</option>
-            </select>
+              <textarea
+                v-if="campo.tipo === TipoCampoFicha.TextoLargo"
+                v-model="fichaForm[campo.code]"
+                rows="3"
+                :required="campo.requerido"
+              ></textarea>
 
-            <input
-              v-else-if="campo.tipo === TipoCampoFicha.Numero"
-              type="number"
-              v-model.number="fichaForm[campo.code]"
-              :required="campo.requerido"
-            />
+              <label v-else-if="campo.tipo === TipoCampoFicha.Booleano" class="detalle__check">
+                <input type="checkbox" v-model="fichaForm[campo.code]" /> Sí
+              </label>
 
-            <input
-              v-else-if="campo.tipo === TipoCampoFicha.Fecha"
-              type="date"
-              v-model="fichaForm[campo.code]"
-              :required="campo.requerido"
-            />
+              <select
+                v-else-if="campo.tipo === TipoCampoFicha.Seleccion"
+                v-model="fichaForm[campo.code]"
+                :required="campo.requerido"
+              >
+                <option value="">—</option>
+                <option v-for="op in campo.opciones ?? []" :key="op" :value="op">{{ op }}</option>
+              </select>
 
-            <input
-              v-else
-              type="text"
-              v-model="fichaForm[campo.code]"
-              :required="campo.requerido"
-            />
+              <input
+                v-else-if="campo.tipo === TipoCampoFicha.Numero"
+                type="number"
+                v-model.number="fichaForm[campo.code]"
+                :required="campo.requerido"
+              />
+
+              <input
+                v-else-if="campo.tipo === TipoCampoFicha.Fecha"
+                type="date"
+                v-model="fichaForm[campo.code]"
+                :required="campo.requerido"
+              />
+
+              <input
+                v-else
+                type="text"
+                v-model="fichaForm[campo.code]"
+                :required="campo.requerido"
+              />
+            </div>
           </div>
 
           <div class="detalle__form-actions">
@@ -396,21 +478,54 @@ onMounted(fetchAll)
         <!-- Listado de fichas -->
         <template v-if="fichaMode === 'none'">
           <p v-if="!fichas.length">Sin fichas.</p>
-          <article v-for="f in fichas" :key="f.id" class="detalle__ficha">
+
+          <!-- Plantillas tabulares (ej. Laboratorio): vista pivot (analitos × fechas) -->
+          <div v-for="p in plantillasTabla" :key="'tabla-' + p.id" class="detalle__lab">
+            <div class="detalle__card-header">
+              <h3>{{ p.nombre }}</h3>
+            </div>
+            <div class="detalle__tabla-wrap">
+              <table class="detalle__tabla">
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th v-for="f in fichasDePlantilla(p.id)" :key="f.id">
+                      {{ f.fecha ? formatFecha(f.fecha) : '—' }}
+                      <button type="button" class="detalle__link" @click="startEditFicha(f)">✎</button>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="campo in p.schema.campos" :key="campo.code">
+                    <th scope="row">{{ campo.label }}</th>
+                    <td v-for="f in fichasDePlantilla(p.id)" :key="f.id">
+                      {{ formatCampo(campo, f.data[campo.code]) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Fichas normales: tarjetas -->
+          <article v-for="f in fichasNormales" :key="f.id" class="detalle__ficha">
             <div class="detalle__card-header">
               <h3>{{ plantillaMap[f.plantillaId]?.nombre ?? ('Plantilla ' + f.plantillaId) }}</h3>
               <button type="button" @click="startEditFicha(f)">Editar</button>
             </div>
-            <dl class="detalle__dl">
-              <template v-if="plantillaMap[f.plantillaId]">
-                <template v-for="campo in plantillaMap[f.plantillaId]!.schema.campos" :key="campo.code">
-                  <dt>{{ campo.label }}</dt><dd>{{ formatValue(f.data[campo.code]) }}</dd>
-                </template>
-              </template>
-              <template v-else>
-                <template v-for="[k, v] in fichaEntries(f.data)" :key="k">
-                  <dt>{{ k }}</dt><dd>{{ formatValue(v) }}</dd>
-                </template>
+            <template v-if="plantillaMap[f.plantillaId]">
+              <div v-for="grupo in gruposDe(f.plantillaId)" :key="grupo.seccion ?? '_'" class="detalle__seccion">
+                <h4 v-if="grupo.seccion" class="detalle__seccion-titulo">{{ grupo.seccion }}</h4>
+                <dl class="detalle__dl">
+                  <template v-for="campo in grupo.campos" :key="campo.code">
+                    <dt>{{ campo.label }}</dt><dd>{{ formatCampo(campo, f.data[campo.code]) }}</dd>
+                  </template>
+                </dl>
+              </div>
+            </template>
+            <dl v-else class="detalle__dl">
+              <template v-for="[k, v] in fichaEntries(f.data)" :key="k">
+                <dt>{{ k }}</dt><dd>{{ formatValue(v) }}</dd>
               </template>
             </dl>
           </article>
@@ -421,8 +536,9 @@ onMounted(fetchAll)
         <h2>Visitas</h2>
         <ul class="detalle__visitas">
           <li v-for="v in visitas" :key="v.id">
-            <strong>{{ v.fecha }}</strong> — {{ v.motivo }}
-            <p>{{ v.evolucion }}</p>
+            <strong>{{ formatFecha(v.fecha) }}</strong> — {{ v.motivo }}
+            <p v-if="v.evolucion"><em>Enfermedad actual:</em> {{ v.evolucion }}</p>
+            <p v-if="v.conducta"><em>Conducta:</em> {{ v.conducta }}</p>
           </li>
           <li v-if="!visitas.length">Sin visitas.</li>
         </ul>
@@ -431,7 +547,8 @@ onMounted(fetchAll)
           <h3>Nueva visita</h3>
           <input v-model="nuevaVisita.fecha" type="date" required />
           <input v-model="nuevaVisita.motivo" placeholder="Motivo" required />
-          <textarea v-model="nuevaVisita.evolucion" placeholder="Evolución" rows="3" />
+          <textarea v-model="nuevaVisita.evolucion" placeholder="Enfermedad actual" rows="3" />
+          <textarea v-model="nuevaVisita.conducta" placeholder="Conducta" rows="2" />
           <button type="submit" :disabled="saving">
             {{ saving ? 'Guardando...' : 'Agregar visita' }}
           </button>
@@ -512,6 +629,22 @@ onMounted(fetchAll)
     }
   }
 
+  &__seccion {
+    & + & {
+      margin-top: 1rem;
+    }
+  }
+
+  &__seccion-titulo {
+    margin: 0.75rem 0 0.5rem;
+    padding-bottom: 0.25rem;
+    border-bottom: 1px solid #eee;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #2c7;
+  }
+
   &__campo {
     display: flex;
     flex-direction: column;
@@ -544,6 +677,47 @@ onMounted(fetchAll)
   &__hint {
     color: #777;
     font-size: 0.9rem;
+  }
+
+  &__lab {
+    margin-top: 1rem;
+  }
+
+  &__tabla-wrap {
+    overflow-x: auto;
+  }
+
+  &__tabla {
+    border-collapse: collapse;
+    font-size: 0.85rem;
+
+    th,
+    td {
+      border: 1px solid #eee;
+      padding: 0.35rem 0.6rem;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    thead th {
+      background: #f7f7f7;
+      position: sticky;
+      top: 0;
+    }
+
+    tbody th {
+      font-weight: 600;
+      background: #fafafa;
+    }
+  }
+
+  &__link {
+    background: none;
+    border: none;
+    padding: 0 0 0 0.25rem;
+    color: #2c7;
+    cursor: pointer;
+    font-size: 0.8rem;
   }
 
   &__error {

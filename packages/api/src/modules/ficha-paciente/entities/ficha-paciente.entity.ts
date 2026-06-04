@@ -12,6 +12,10 @@ export class FichaPaciente extends BaseTenantEntity {
   @Column({ name: 'plantilla_id', type: 'int' })
   plantillaId: number;
 
+  /** Fecha del registro (ej. fecha de la extraccion de laboratorio). */
+  @Column({ type: 'date', nullable: true })
+  fecha: string | null;
+
   @Column({ type: 'jsonb', default: {} })
   data: DataFicha;
 }

@@ -1,4 +1,4 @@
-import { IsInt, IsObject, IsOptional } from 'class-validator';
+import { IsInt, IsObject, IsOptional, IsString } from 'class-validator';
 import type { DataFicha } from '@hc/shared';
 
 export class UpsertFichaPacienteDto {
@@ -7,6 +7,10 @@ export class UpsertFichaPacienteDto {
 
   @IsInt()
   plantillaId: number;
+
+  @IsOptional()
+  @IsString()
+  fecha?: string;
 
   @IsOptional()
   @IsObject()

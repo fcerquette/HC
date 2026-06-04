@@ -41,6 +41,14 @@ export class CreatePacienteDto {
   obraSocial?: string;
 
   @IsOptional()
+  @IsString()
+  peso?: string;
+
+  @IsOptional()
+  @IsString()
+  talla?: string;
+
+  @IsOptional()
   @IsInt()
   companyId?: number;
 }

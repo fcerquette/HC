@@ -24,6 +24,8 @@ export interface CampoFicha {
 export interface SchemaFicha {
   secciones?: string[];
   campos: CampoFicha[];
+  /** 'tabla' = vista pivot (analitos x fechas, ej. Laboratorio). Default 'ficha'. */
+  vista?: 'ficha' | 'tabla';
 }
 
 /** Datos cargados de una ficha, indexados por `code` de campo. */

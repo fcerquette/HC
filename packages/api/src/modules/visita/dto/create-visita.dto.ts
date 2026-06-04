@@ -15,4 +15,8 @@ export class CreateVisitaDto {
   @IsOptional()
   @IsString()
   evolucion?: string;
+
+  @IsOptional()
+  @IsString()
+  conducta?: string;
 }

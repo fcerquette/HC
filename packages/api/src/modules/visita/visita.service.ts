@@ -29,6 +29,7 @@ export class VisitaService {
         fecha: dto.fecha ? new Date(dto.fecha) : new Date(),
         motivo: dto.motivo ?? null,
         evolucion: dto.evolucion ?? '',
+        conducta: dto.conducta ?? null,
       }),
     );
     await this.auditoria.log('Visita', visita.id, AccionAuditoria.Crear);

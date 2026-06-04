@@ -36,4 +36,10 @@ export class Paciente extends BaseTenantEntity {
 
   @Column({ name: 'obra_social', type: 'varchar', nullable: true })
   obraSocial: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  peso: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  talla: string | null;
 }
