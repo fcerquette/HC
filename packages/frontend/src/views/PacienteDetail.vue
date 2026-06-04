@@ -3,6 +3,8 @@ import { onMounted, ref, computed, watch } from 'vue'
 import { Sexo, TipoCampoFicha } from '@hc/shared'
 import type { SchemaFicha, CampoFicha } from '@hc/shared'
 import apiClient from '@/api/client'
+import CalendarioAnual from '@/components/CalendarioAnual.vue'
+import type { EventoFecha } from '@/components/CalendarioAnual.vue'
 
 const props = defineProps<{ id: string }>()
 
@@ -52,6 +54,24 @@ const plantillas = ref<Plantilla[]>([])
 const visitas = ref<Visita[]>([])
 const loading = ref(false)
 const error = ref('')
+
+// Secciones colapsables + navegación.
+const abierto = ref<Record<string, boolean>>({
+  datos: true,
+  calendario: true,
+  controles: true,
+  fichas: true,
+  visitas: true,
+})
+function toggle(s: string) {
+  abierto.value[s] = !abierto.value[s]
+}
+function irA(s: string) {
+  abierto.value[s] = true
+  requestAnimationFrame(() => {
+    document.getElementById('sec-' + s)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
+}
 
 const saving = ref(false)
 const nuevaVisita = ref({ fecha: '', motivo: '', evolucion: '', conducta: '' })
@@ -107,16 +127,125 @@ const plantillasTabla = computed<Plantilla[]>(() =>
   ),
 )
 
-// Fichas que se muestran como tarjeta (las que NO son de vista tabla).
+// Fichas que se muestran como tarjeta (excluye vista tabla y checklist, que tienen UI propia).
 const fichasNormales = computed<FichaPaciente[]>(() =>
-  fichas.value.filter((f) => plantillaMap.value[f.plantillaId]?.schema?.vista !== 'tabla'),
+  fichas.value.filter((f) => {
+    const v = plantillaMap.value[f.plantillaId]?.schema?.vista
+    return v !== 'tabla' && v !== 'checklist'
+  }),
 )
+
+// Plantillas tipo checklist (controles booleanos por año), con UI dedicada.
+const plantillasChecklist = computed<Plantilla[]>(() =>
+  plantillas.value.filter((p) => p.schema?.vista === 'checklist'),
+)
+
+// Plantillas disponibles en "Nueva ficha" (las checklist se manejan en su propia tarjeta).
+const plantillasParaFicha = computed<Plantilla[]>(() =>
+  plantillas.value.filter((p) => p.schema?.vista !== 'checklist'),
+)
+
+// Fichas de una checklist, una por año, más reciente primero.
+function fichasDeChecklist(plantillaId: number): FichaPaciente[] {
+  return fichas.value
+    .filter((f) => f.plantillaId === plantillaId)
+    .sort((a, b) => (b.fecha ?? '').localeCompare(a.fecha ?? ''))
+}
+
+function anioDe(f: FichaPaciente): string {
+  return f.fecha ? f.fecha.slice(0, 4) : '—'
+}
+
+const nuevoAnio = ref<Record<number, string>>({})
+
+async function toggleControl(f: FichaPaciente, code: string, value: boolean) {
+  error.value = ''
+  try {
+    await apiClient.patch(`/fichas/${f.id}/data`, { [code]: value })
+    f.data = { ...f.data, [code]: value }
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al guardar el control'
+  }
+}
+
+async function agregarAnioChecklist(plantillaId: number) {
+  const y = (nuevoAnio.value[plantillaId] || '').trim()
+  if (!/^\d{4}$/.test(y)) {
+    error.value = 'Ingresá un año válido (4 dígitos)'
+    return
+  }
+  error.value = ''
+  try {
+    await apiClient.post('/fichas', {
+      pacienteId: Number(props.id),
+      plantillaId,
+      fecha: `${y}-01-01`,
+      data: {},
+    })
+    const { data } = await apiClient.get<FichaPaciente[]>(`/pacientes/${props.id}/fichas`)
+    fichas.value = data
+    nuevoAnio.value[plantillaId] = ''
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : 'Error al agregar el año'
+  }
+}
 
 // Fichas de una plantilla, ordenadas por fecha (para las columnas del pivot).
 function fichasDePlantilla(plantillaId: number): FichaPaciente[] {
   return fichas.value
     .filter((f) => f.plantillaId === plantillaId)
     .sort((a, b) => (a.fecha ?? '').localeCompare(b.fecha ?? ''))
+}
+
+// Todos los eventos con fecha (visitas + laboratorios + campos fecha de fichas).
+const eventos = computed<EventoFecha[]>(() => {
+  const out: EventoFecha[] = []
+  for (const v of visitas.value) {
+    if (v.fecha) {
+      out.push({
+        fecha: String(v.fecha).slice(0, 10),
+        tipo: 'visita',
+        label: v.motivo || 'Visita',
+        origen: 'visita',
+        refId: Number(v.id),
+      })
+    }
+  }
+  for (const f of fichas.value) {
+    const p = plantillaMap.value[f.plantillaId]
+    if (!p) continue
+    if (p.schema?.vista === 'tabla' && f.fecha) {
+      out.push({
+        fecha: String(f.fecha).slice(0, 10),
+        tipo: 'laboratorio',
+        label: p.nombre,
+        origen: 'ficha',
+        refId: f.id,
+      })
+    }
+    for (const campo of p.schema?.campos ?? []) {
+      if (campo.tipo === TipoCampoFicha.Fecha) {
+        const val = f.data?.[campo.code]
+        if (val) {
+          out.push({
+            fecha: String(val).slice(0, 10),
+            tipo: 'estudio',
+            label: campo.label,
+            origen: 'ficha',
+            refId: f.id,
+          })
+        }
+      }
+    }
+  }
+  return out
+})
+
+function onSeleccionarEvento(e: EventoFecha) {
+  if (e.origen === 'ficha') {
+    const f = fichas.value.find((x) => x.id === e.refId)
+    if (f) startEditFicha(f)
+  }
 }
 
 /** Agrupa los campos por `seccion`, preservando el orden de aparicion. */
@@ -160,6 +289,7 @@ function startNuevaFicha() {
   fichaPlantillaId.value = null
   fichaFecha.value = ''
   fichaForm.value = {}
+  abierto.value.fichas = true
 }
 
 function startEditFicha(f: FichaPaciente) {
@@ -167,6 +297,7 @@ function startEditFicha(f: FichaPaciente) {
   fichaEnEdicionId.value = f.id
   fichaPlantillaId.value = f.plantillaId
   fichaFecha.value = f.fecha ?? ''
+  abierto.value.fichas = true
   const p = plantillaMap.value[f.plantillaId]
   const form: Record<string, any> = {}
   for (const campo of p?.schema?.campos ?? []) {
@@ -230,6 +361,7 @@ function startEdit() {
   if (!paciente.value) return
   editForm.value = { ...paciente.value }
   editing.value = true
+  abierto.value.datos = true
 }
 
 function cancelEdit() {
@@ -328,20 +460,34 @@ onMounted(fetchAll)
 
 <template>
   <section class="detalle">
-    <RouterLink to="/pacientes">&larr; Volver</RouterLink>
-
     <p v-if="error" class="detalle__error">{{ error }}</p>
     <p v-if="loading">Cargando...</p>
 
     <template v-if="paciente">
-      <h1>{{ paciente.apellido }}, {{ paciente.nombre }}</h1>
+      <header class="detalle__topbar">
+        <div class="detalle__topbar-row">
+          <RouterLink to="/pacientes" class="detalle__volver">&larr; Volver</RouterLink>
+          <h1>{{ paciente.apellido }}, {{ paciente.nombre }}</h1>
+          <button type="button" class="detalle__accion" @click="irA('visitas')">+ Visita</button>
+        </div>
+        <nav class="detalle__nav">
+          <button type="button" @click="irA('datos')">Datos</button>
+          <button type="button" @click="irA('calendario')">Calendario</button>
+          <button type="button" @click="irA('controles')">Controles</button>
+          <button type="button" @click="irA('fichas')">Fichas</button>
+          <button type="button" @click="irA('visitas')">Visitas</button>
+        </nav>
+      </header>
 
-      <div class="detalle__card">
+      <div id="sec-datos" class="detalle__card">
         <div class="detalle__card-header">
-          <h2>Datos filiatorios</h2>
+          <h2 class="detalle__toggle" @click="toggle('datos')">
+            <span class="detalle__chevron">{{ abierto.datos ? '▾' : '▸' }}</span> Datos filiatorios
+          </h2>
           <button v-if="!editing" type="button" @click="startEdit">Editar</button>
         </div>
 
+        <div v-show="abierto.datos">
         <dl v-if="!editing" class="detalle__dl">
           <dt>DNI</dt><dd>{{ paciente.dni }}</dd>
           <dt>Fecha nac.</dt><dd>{{ formatFecha(paciente.fechaNacimiento) }}</dd>
@@ -380,11 +526,66 @@ onMounted(fetchAll)
             <button type="button" :disabled="savingPaciente" @click="cancelEdit">Cancelar</button>
           </div>
         </form>
+        </div>
       </div>
 
-      <div class="detalle__card">
+      <div id="sec-calendario" class="detalle__card">
         <div class="detalle__card-header">
-          <h2>Fichas</h2>
+          <h2 class="detalle__toggle" @click="toggle('calendario')">
+            <span class="detalle__chevron">{{ abierto.calendario ? '▾' : '▸' }}</span> Calendario
+          </h2>
+        </div>
+        <div v-show="abierto.calendario">
+          <CalendarioAnual :eventos="eventos" @seleccionar="onSeleccionarEvento" />
+        </div>
+      </div>
+
+      <div
+        v-for="p in plantillasChecklist"
+        :key="'chk-' + p.id"
+        id="sec-controles"
+        class="detalle__card"
+      >
+        <div class="detalle__card-header">
+          <h2 class="detalle__toggle" @click="toggle('controles')">
+            <span class="detalle__chevron">{{ abierto.controles ? '▾' : '▸' }}</span> {{ p.nombre }}
+          </h2>
+          <form class="detalle__chk-add" @submit.prevent="agregarAnioChecklist(p.id)">
+            <input v-model="nuevoAnio[p.id]" type="number" placeholder="Año" min="1900" max="2100" />
+            <button type="submit">+ Año</button>
+          </form>
+        </div>
+
+        <div v-show="abierto.controles">
+        <p v-if="!fichasDeChecklist(p.id).length" class="detalle__hint">
+          Sin años cargados. Agregá uno arriba.
+        </p>
+
+        <div class="detalle__chk-grid">
+          <div v-for="f in fichasDeChecklist(p.id)" :key="f.id" class="detalle__chk-anio">
+            <h4>{{ anioDe(f) }}</h4>
+            <ul class="detalle__chk-list">
+              <li v-for="campo in p.schema.campos" :key="campo.code">
+                <label>
+                  <input
+                    type="checkbox"
+                    :checked="!!f.data[campo.code]"
+                    @change="toggleControl(f, campo.code, ($event.target as HTMLInputElement).checked)"
+                  />
+                  {{ campo.label }}
+                </label>
+              </li>
+            </ul>
+          </div>
+        </div>
+        </div>
+      </div>
+
+      <div id="sec-fichas" class="detalle__card">
+        <div class="detalle__card-header">
+          <h2 class="detalle__toggle" @click="toggle('fichas')">
+            <span class="detalle__chevron">{{ abierto.fichas ? '▾' : '▸' }}</span> Fichas
+          </h2>
           <button
             v-if="fichaMode === 'none' && plantillas.length"
             type="button"
@@ -394,6 +595,7 @@ onMounted(fetchAll)
           </button>
         </div>
 
+        <div v-show="abierto.fichas">
         <p v-if="!plantillas.length" class="detalle__hint">
           No hay plantillas de ficha disponibles. Creá una con <code>POST /plantillas</code>.
         </p>
@@ -406,7 +608,7 @@ onMounted(fetchAll)
             <span class="detalle__campo-label">Plantilla</span>
             <select v-model.number="fichaPlantillaId" required>
               <option :value="null" disabled>Elegí una plantilla…</option>
-              <option v-for="p in plantillas" :key="p.id" :value="p.id">{{ p.nombre }}</option>
+              <option v-for="p in plantillasParaFicha" :key="p.id" :value="p.id">{{ p.nombre }}</option>
             </select>
           </label>
 
@@ -530,10 +732,16 @@ onMounted(fetchAll)
             </dl>
           </article>
         </template>
+        </div>
       </div>
 
-      <div class="detalle__card">
-        <h2>Visitas</h2>
+      <div id="sec-visitas" class="detalle__card">
+        <div class="detalle__card-header">
+          <h2 class="detalle__toggle" @click="toggle('visitas')">
+            <span class="detalle__chevron">{{ abierto.visitas ? '▾' : '▸' }}</span> Visitas
+          </h2>
+        </div>
+        <div v-show="abierto.visitas">
         <ul class="detalle__visitas">
           <li v-for="v in visitas" :key="v.id">
             <strong>{{ formatFecha(v.fecha) }}</strong> — {{ v.motivo }}
@@ -553,6 +761,7 @@ onMounted(fetchAll)
             {{ saving ? 'Guardando...' : 'Agregar visita' }}
           </button>
         </form>
+        </div>
       </div>
     </template>
   </section>
@@ -560,11 +769,72 @@ onMounted(fetchAll)
 
 <style scoped lang="scss">
 .detalle {
+  &__topbar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+    margin: -1.5rem -1.5rem 0;
+    padding: 0.6rem 1.5rem;
+  }
+
+  &__topbar-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+
+    h1 {
+      font-size: 1.25rem;
+      margin: 0;
+      flex: 1;
+    }
+  }
+
+  &__volver {
+    white-space: nowrap;
+  }
+
+  &__accion {
+    white-space: nowrap;
+  }
+
+  &__nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+
+    button {
+      background: #f0f4f8;
+      color: #1a4f8b;
+      border-color: transparent;
+      padding: 0.25rem 0.6rem;
+      font-size: 0.85rem;
+    }
+  }
+
   &__card {
     margin: 1rem 0;
     padding: 1rem;
     border: 1px solid #ddd;
     border-radius: 8px;
+    scroll-margin-top: 5.5rem;
+  }
+
+  &__toggle {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  &__chevron {
+    font-size: 0.75rem;
+    color: #888;
+    width: 0.9rem;
+    display: inline-block;
   }
 
   &__dl {
@@ -642,7 +912,7 @@ onMounted(fetchAll)
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #2c7;
+    color: #555;
   }
 
   &__campo {
@@ -714,10 +984,53 @@ onMounted(fetchAll)
   &__link {
     background: none;
     border: none;
-    padding: 0 0 0 0.25rem;
-    color: #2c7;
+    padding: 0.2rem 0.35rem;
+    color: #1a4f8b;
     cursor: pointer;
-    font-size: 0.8rem;
+    font-size: 0.95rem;
+  }
+
+  &__chk-add {
+    display: flex;
+    gap: 0.4rem;
+
+    input {
+      width: 5rem;
+    }
+  }
+
+  &__chk-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-top: 0.5rem;
+  }
+
+  &__chk-anio {
+    border: 1px solid #eee;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+
+    h4 {
+      margin: 0 0 0.5rem;
+    }
+  }
+
+  &__chk-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+
+    li {
+      padding: 0.15rem 0;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.9rem;
+    }
   }
 
   &__error {

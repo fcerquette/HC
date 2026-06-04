@@ -24,8 +24,12 @@ export interface CampoFicha {
 export interface SchemaFicha {
   secciones?: string[];
   campos: CampoFicha[];
-  /** 'tabla' = vista pivot (analitos x fechas, ej. Laboratorio). Default 'ficha'. */
-  vista?: 'ficha' | 'tabla';
+  /**
+   * Vista de la plantilla. Default 'ficha' (tarjeta).
+   * 'tabla' = pivot (analitos x fechas, ej. Laboratorio).
+   * 'checklist' = controles booleanos por año (tildado inline).
+   */
+  vista?: 'ficha' | 'tabla' | 'checklist';
 }
 
 /** Datos cargados de una ficha, indexados por `code` de campo. */

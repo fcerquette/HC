@@ -89,5 +89,23 @@ SELECT 1, 'Laboratorio',
 ]}'::jsonb, true
 WHERE NOT EXISTS (SELECT 1 FROM plantillas_ficha WHERE instance_id = 1 AND nombre = 'Laboratorio');
 
+-- Control anual: vista checklist (controles booleanos por año).
+INSERT INTO plantillas_ficha (instance_id, nombre, schema, activa)
+SELECT 1, 'Control anual',
+'{"vista":"checklist","campos":[
+  {"code":"control_cardiovascular","label":"Control cardiovascular","tipo":"boolean"},
+  {"code":"control_oftalmologico","label":"Control oftalmológico","tipo":"boolean"},
+  {"code":"laboratorio_completo","label":"Laboratorio completo","tipo":"boolean"},
+  {"code":"pap","label":"PAP","tipo":"boolean"},
+  {"code":"eco_mamaria","label":"Ecografía mamaria","tipo":"boolean"},
+  {"code":"eco_ginecologica","label":"Ecografía ginecológica","tipo":"boolean"},
+  {"code":"control_urologico","label":"Control urológico","tipo":"boolean"},
+  {"code":"veda","label":"VEDA","tipo":"boolean"},
+  {"code":"colonoscopia","label":"Colonoscopia","tipo":"boolean"},
+  {"code":"dmo","label":"DMO","tipo":"boolean"},
+  {"code":"vacunas","label":"Vacunas","tipo":"boolean"}
+]}'::jsonb, true
+WHERE NOT EXISTS (SELECT 1 FROM plantillas_ficha WHERE instance_id = 1 AND nombre = 'Control anual');
+
 SELECT id, nombre, schema->>'vista' AS vista, jsonb_array_length(schema->'campos') AS campos
 FROM plantillas_ficha WHERE instance_id = 1 ORDER BY id;
