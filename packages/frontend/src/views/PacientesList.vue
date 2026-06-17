@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { Sexo } from '@hc/shared'
 import apiClient from '@/api/client'
 
@@ -24,6 +24,16 @@ type NuevoPaciente = Omit<Paciente, 'id'>
 const pacientes = ref<Paciente[]>([])
 const loading = ref(false)
 const error = ref('')
+
+const busqueda = ref('')
+
+const pacientesFiltrados = computed(() => {
+  const q = busqueda.value.trim().toLowerCase()
+  if (!q) return pacientes.value
+  return pacientes.value.filter((p) =>
+    [p.apellido, p.nombre, p.dni].some((campo) => campo?.toLowerCase().includes(q)),
+  )
+})
 
 const showForm = ref(false)
 const saving = ref(false)
@@ -85,8 +95,12 @@ onMounted(fetchPacientes)
   <section class="pacientes">
     <header class="pacientes__header">
       <h1>Pacientes</h1>
-      <button @click="showForm = !showForm">
-        {{ showForm ? 'Cancelar' : 'Nuevo paciente' }}
+      <button
+        class="btn"
+        :class="showForm ? 'btn--secondary' : 'btn--primary'"
+        @click="showForm = !showForm"
+      >
+        {{ showForm ? 'Cancelar' : '+ Nuevo paciente' }}
       </button>
     </header>
 
@@ -108,10 +122,24 @@ onMounted(fetchPacientes)
       <input v-model="form.obraSocial" placeholder="Obra social" />
       <input v-model="form.peso" placeholder="Peso" />
       <input v-model="form.talla" placeholder="Talla" />
-      <button type="submit" :disabled="saving">
+      <button type="submit" class="btn btn--primary" :disabled="saving">
         {{ saving ? 'Guardando...' : 'Guardar' }}
       </button>
     </form>
+
+    <div class="pacientes__searchbar">
+      <span class="pacientes__search-icon" aria-hidden="true">🔍</span>
+      <input
+        v-model="busqueda"
+        class="pacientes__search"
+        type="search"
+        aria-label="Buscar pacientes por apellido, nombre o DNI"
+        placeholder="Buscar por apellido, nombre o DNI…"
+      />
+      <span v-if="!loading" class="pacientes__count">
+        {{ pacientesFiltrados.length }} de {{ pacientes.length }}
+      </span>
+    </div>
 
     <p v-if="error" class="pacientes__error">{{ error }}</p>
     <p v-if="loading">Cargando...</p>
@@ -126,7 +154,7 @@ onMounted(fetchPacientes)
         </tr>
       </thead>
       <tbody>
-        <tr v-for="p in pacientes" :key="p.id">
+        <tr v-for="p in pacientesFiltrados" :key="p.id">
           <td>{{ p.apellido }}</td>
           <td>{{ p.nombre }}</td>
           <td>{{ p.dni }}</td>
@@ -134,8 +162,10 @@ onMounted(fetchPacientes)
             <RouterLink :to="`/pacientes/${p.id}`">Ver</RouterLink>
           </td>
         </tr>
-        <tr v-if="!pacientes.length">
-          <td colspan="4">Sin pacientes.</td>
+        <tr v-if="!pacientesFiltrados.length">
+          <td colspan="4">
+            {{ pacientes.length ? 'Sin resultados.' : 'Sin pacientes.' }}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -176,8 +206,80 @@ onMounted(fetchPacientes)
     }
   }
 
+  &__searchbar {
+    position: relative;
+    display: flex;
+    align-items: center;
+    margin: 1rem 0;
+  }
+
+  &__search-icon {
+    position: absolute;
+    left: 0.75rem;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  &__search {
+    flex: 1;
+    padding: 0.6rem 0.75rem 0.6rem 2.25rem;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    box-sizing: border-box;
+
+    &:focus-visible {
+      outline: 2px solid #2d7ff9;
+      outline-offset: 1px;
+      border-color: #2d7ff9;
+    }
+  }
+
+  &__count {
+    margin-left: 0.75rem;
+    font-size: 0.85rem;
+    color: #666;
+    white-space: nowrap;
+  }
+
   &__error {
     color: #c0392b;
+  }
+}
+
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+
+  &:focus-visible {
+    outline: 2px solid #2d7ff9;
+    outline-offset: 1px;
+  }
+
+  &--primary {
+    background: #2d7ff9;
+    color: #fff;
+
+    &:hover {
+      background: #1a6ae0;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+  }
+
+  &--secondary {
+    background: #fff;
+    color: #444;
+    border-color: #ccc;
+
+    &:hover {
+      background: #f5f5f5;
+    }
   }
 }
 </style>

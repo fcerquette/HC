@@ -55,23 +55,26 @@ const visitas = ref<Visita[]>([])
 const loading = ref(false)
 const error = ref('')
 
-// Secciones colapsables + navegación.
-const abierto = ref<Record<string, boolean>>({
-  datos: true,
-  calendario: true,
-  controles: true,
-  fichas: true,
-  visitas: true,
+// Pestañas de navegación.
+type Tab = 'resumen' | 'historico' | 'fichas' | 'visitas'
+const tab = ref<Tab>('resumen')
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'resumen', label: 'Resumen' },
+  { id: 'historico', label: 'Histórico' },
+  { id: 'fichas', label: 'Fichas' },
+  { id: 'visitas', label: 'Visitas' },
+]
+
+// Edad en años a partir de la fecha de nacimiento (yyyy-mm-dd).
+const edad = computed<number | null>(() => {
+  const m = String(paciente.value?.fechaNacimiento ?? '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (!m) return null
+  const hoy = new Date()
+  let e = hoy.getFullYear() - Number(m[1])
+  const dm = hoy.getMonth() + 1 - Number(m[2])
+  if (dm < 0 || (dm === 0 && hoy.getDate() < Number(m[3]))) e--
+  return e >= 0 ? e : null
 })
-function toggle(s: string) {
-  abierto.value[s] = !abierto.value[s]
-}
-function irA(s: string) {
-  abierto.value[s] = true
-  requestAnimationFrame(() => {
-    document.getElementById('sec-' + s)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  })
-}
 
 const saving = ref(false)
 const nuevaVisita = ref({ fecha: '', motivo: '', evolucion: '', conducta: '' })
@@ -289,7 +292,7 @@ function startNuevaFicha() {
   fichaPlantillaId.value = null
   fichaFecha.value = ''
   fichaForm.value = {}
-  abierto.value.fichas = true
+  tab.value = 'fichas'
 }
 
 function startEditFicha(f: FichaPaciente) {
@@ -297,7 +300,7 @@ function startEditFicha(f: FichaPaciente) {
   fichaEnEdicionId.value = f.id
   fichaPlantillaId.value = f.plantillaId
   fichaFecha.value = f.fecha ?? ''
-  abierto.value.fichas = true
+  tab.value = 'fichas'
   const p = plantillaMap.value[f.plantillaId]
   const form: Record<string, any> = {}
   for (const campo of p?.schema?.campos ?? []) {
@@ -361,7 +364,7 @@ function startEdit() {
   if (!paciente.value) return
   editForm.value = { ...paciente.value }
   editing.value = true
-  abierto.value.datos = true
+  tab.value = 'resumen'
 }
 
 function cancelEdit() {
@@ -467,38 +470,59 @@ onMounted(fetchAll)
       <header class="detalle__topbar">
         <div class="detalle__topbar-row">
           <RouterLink to="/pacientes" class="detalle__volver">&larr; Volver</RouterLink>
-          <h1>{{ paciente.apellido }}, {{ paciente.nombre }}</h1>
-          <button type="button" class="detalle__accion" @click="irA('visitas')">+ Visita</button>
+          <div class="detalle__id">
+            <h1>{{ paciente.apellido }}, {{ paciente.nombre }}</h1>
+            <p class="detalle__id-sub">
+              DNI {{ paciente.dni }}
+              <template v-if="edad !== null"> · {{ edad }} años</template>
+              <template v-if="paciente.sexo"> · {{ SEXO_LABEL[paciente.sexo] }}</template>
+            </p>
+          </div>
+          <div class="detalle__acciones">
+            <button type="button" class="btn btn--secondary" @click="startEdit">Editar</button>
+            <button type="button" class="btn btn--primary" @click="tab = 'visitas'">+ Visita</button>
+          </div>
         </div>
-        <nav class="detalle__nav">
-          <button type="button" @click="irA('datos')">Datos</button>
-          <button type="button" @click="irA('calendario')">Calendario</button>
-          <button type="button" @click="irA('controles')">Controles</button>
-          <button type="button" @click="irA('fichas')">Fichas</button>
-          <button type="button" @click="irA('visitas')">Visitas</button>
+
+        <div class="detalle__afiliado">
+          <span class="detalle__afiliado-os">🏥 {{ paciente.obraSocial || 'Sin obra social' }}</span>
+          <span v-if="paciente.contacto" class="detalle__afiliado-extra">📞 {{ paciente.contacto }}</span>
+          <span v-if="paciente.localidad" class="detalle__afiliado-extra">📍 {{ paciente.localidad }}</span>
+        </div>
+
+        <nav class="detalle__tabs" role="tablist">
+          <button
+            v-for="t in TABS"
+            :key="t.id"
+            type="button"
+            role="tab"
+            :aria-selected="tab === t.id"
+            :class="['detalle__tab', { 'detalle__tab--activo': tab === t.id }]"
+            @click="tab = t.id"
+          >
+            {{ t.label }}
+          </button>
         </nav>
       </header>
 
-      <div id="sec-datos" class="detalle__card">
+      <!-- ===== RESUMEN: datos filiatorios ===== -->
+      <section v-show="tab === 'resumen'" class="detalle__card">
         <div class="detalle__card-header">
-          <h2 class="detalle__toggle" @click="toggle('datos')">
-            <span class="detalle__chevron">{{ abierto.datos ? '▾' : '▸' }}</span> Datos filiatorios
-          </h2>
-          <button v-if="!editing" type="button" @click="startEdit">Editar</button>
+          <h2>Datos filiatorios</h2>
+          <button v-if="!editing" type="button" class="btn btn--secondary" @click="startEdit">Editar</button>
         </div>
 
-        <div v-show="abierto.datos">
         <dl v-if="!editing" class="detalle__dl">
           <dt>DNI</dt><dd>{{ paciente.dni }}</dd>
-          <dt>Fecha nac.</dt><dd>{{ formatFecha(paciente.fechaNacimiento) }}</dd>
-          <dt>Sexo</dt><dd>{{ paciente.sexo ? SEXO_LABEL[paciente.sexo] : '' }}</dd>
-          <dt>Contacto</dt><dd>{{ paciente.contacto }}</dd>
-          <dt>Mail</dt><dd>{{ paciente.mail }}</dd>
-          <dt>Dirección</dt><dd>{{ paciente.direccion }}</dd>
-          <dt>Localidad</dt><dd>{{ paciente.localidad }}</dd>
-          <dt>Obra social</dt><dd>{{ paciente.obraSocial }}</dd>
-          <dt>Peso</dt><dd>{{ paciente.peso }}</dd>
-          <dt>Talla</dt><dd>{{ paciente.talla }}</dd>
+          <dt>Fecha nac.</dt><dd>{{ formatFecha(paciente.fechaNacimiento) || '—' }}</dd>
+          <dt>Sexo</dt><dd>{{ paciente.sexo ? SEXO_LABEL[paciente.sexo] : '—' }}</dd>
+          <dt>Contacto</dt><dd>{{ paciente.contacto || '—' }}</dd>
+          <dt>Mail</dt><dd>{{ paciente.mail || '—' }}</dd>
+          <dt>Dirección</dt><dd>{{ paciente.direccion || '—' }}</dd>
+          <dt>Localidad</dt><dd>{{ paciente.localidad || '—' }}</dd>
+          <dt>Obra social</dt><dd>{{ paciente.obraSocial || '—' }}</dd>
+          <dt>Peso</dt><dd>{{ paciente.peso || '—' }}</dd>
+          <dt>Talla</dt><dd>{{ paciente.talla || '—' }}</dd>
         </dl>
 
         <form v-else class="detalle__form detalle__form--grid" @submit.prevent="guardarPaciente">
@@ -520,43 +544,34 @@ onMounted(fetchAll)
           <input v-model="editForm.peso" placeholder="Peso" />
           <input v-model="editForm.talla" placeholder="Talla" />
           <div class="detalle__form-actions">
-            <button type="submit" :disabled="savingPaciente">
+            <button type="submit" class="btn btn--primary" :disabled="savingPaciente">
               {{ savingPaciente ? 'Guardando...' : 'Guardar cambios' }}
             </button>
-            <button type="button" :disabled="savingPaciente" @click="cancelEdit">Cancelar</button>
+            <button type="button" class="btn btn--secondary" :disabled="savingPaciente" @click="cancelEdit">Cancelar</button>
           </div>
         </form>
-        </div>
-      </div>
+      </section>
 
-      <div id="sec-calendario" class="detalle__card">
-        <div class="detalle__card-header">
-          <h2 class="detalle__toggle" @click="toggle('calendario')">
-            <span class="detalle__chevron">{{ abierto.calendario ? '▾' : '▸' }}</span> Calendario
-          </h2>
-        </div>
-        <div v-show="abierto.calendario">
-          <CalendarioAnual :eventos="eventos" @seleccionar="onSeleccionarEvento" />
-        </div>
-      </div>
+      <!-- ===== HISTÓRICO: línea de tiempo ===== -->
+      <section v-show="tab === 'historico'" class="detalle__card">
+        <CalendarioAnual :eventos="eventos" @seleccionar="onSeleccionarEvento" />
+      </section>
 
+      <!-- ===== FICHAS: estado clínico estructurado ===== -->
+      <div v-show="tab === 'fichas'">
       <div
         v-for="p in plantillasChecklist"
         :key="'chk-' + p.id"
-        id="sec-controles"
         class="detalle__card"
       >
         <div class="detalle__card-header">
-          <h2 class="detalle__toggle" @click="toggle('controles')">
-            <span class="detalle__chevron">{{ abierto.controles ? '▾' : '▸' }}</span> {{ p.nombre }}
-          </h2>
+          <h2>{{ p.nombre }}</h2>
           <form class="detalle__chk-add" @submit.prevent="agregarAnioChecklist(p.id)">
             <input v-model="nuevoAnio[p.id]" type="number" placeholder="Año" min="1900" max="2100" />
-            <button type="submit">+ Año</button>
+            <button type="submit" class="btn btn--secondary">+ Año</button>
           </form>
         </div>
 
-        <div v-show="abierto.controles">
         <p v-if="!fichasDeChecklist(p.id).length" class="detalle__hint">
           Sin años cargados. Agregá uno arriba.
         </p>
@@ -578,24 +593,21 @@ onMounted(fetchAll)
             </ul>
           </div>
         </div>
-        </div>
       </div>
 
-      <div id="sec-fichas" class="detalle__card">
+      <div class="detalle__card">
         <div class="detalle__card-header">
-          <h2 class="detalle__toggle" @click="toggle('fichas')">
-            <span class="detalle__chevron">{{ abierto.fichas ? '▾' : '▸' }}</span> Fichas
-          </h2>
+          <h2>Fichas</h2>
           <button
             v-if="fichaMode === 'none' && plantillas.length"
             type="button"
+            class="btn btn--primary"
             @click="startNuevaFicha"
           >
             Nueva ficha
           </button>
         </div>
 
-        <div v-show="abierto.fichas">
         <p v-if="!plantillas.length" class="detalle__hint">
           No hay plantillas de ficha disponibles. Creá una con <code>POST /plantillas</code>.
         </p>
@@ -735,21 +747,23 @@ onMounted(fetchAll)
         </div>
       </div>
 
-      <div id="sec-visitas" class="detalle__card">
+      <!-- ===== VISITAS: diario de eventos ===== -->
+      <section v-show="tab === 'visitas'" class="detalle__card">
         <div class="detalle__card-header">
-          <h2 class="detalle__toggle" @click="toggle('visitas')">
-            <span class="detalle__chevron">{{ abierto.visitas ? '▾' : '▸' }}</span> Visitas
-          </h2>
+          <h2>Visitas</h2>
         </div>
-        <div v-show="abierto.visitas">
-        <ul class="detalle__visitas">
-          <li v-for="v in visitas" :key="v.id">
-            <strong>{{ formatFecha(v.fecha) }}</strong> — {{ v.motivo }}
-            <p v-if="v.evolucion"><em>Enfermedad actual:</em> {{ v.evolucion }}</p>
-            <p v-if="v.conducta"><em>Conducta:</em> {{ v.conducta }}</p>
+
+        <ol class="detalle__timeline">
+          <li v-for="v in visitas" :key="v.id" class="detalle__evento">
+            <div class="detalle__evento-fecha">{{ formatFecha(v.fecha) }}</div>
+            <div class="detalle__evento-cuerpo">
+              <strong class="detalle__evento-motivo">{{ v.motivo }}</strong>
+              <p v-if="v.evolucion"><em>Enfermedad actual:</em> {{ v.evolucion }}</p>
+              <p v-if="v.conducta"><em>Conducta:</em> {{ v.conducta }}</p>
+            </div>
           </li>
-          <li v-if="!visitas.length">Sin visitas.</li>
-        </ul>
+          <li v-if="!visitas.length" class="detalle__hint">Sin visitas registradas.</li>
+        </ol>
 
         <form class="detalle__form" @submit.prevent="agregarVisita">
           <h3>Nueva visita</h3>
@@ -757,12 +771,11 @@ onMounted(fetchAll)
           <input v-model="nuevaVisita.motivo" placeholder="Motivo" required />
           <textarea v-model="nuevaVisita.evolucion" placeholder="Enfermedad actual" rows="3" />
           <textarea v-model="nuevaVisita.conducta" placeholder="Conducta" rows="2" />
-          <button type="submit" :disabled="saving">
+          <button type="submit" class="btn btn--primary" :disabled="saving">
             {{ saving ? 'Guardando...' : 'Agregar visita' }}
           </button>
         </form>
-        </div>
-      </div>
+      </section>
     </template>
   </section>
 </template>
@@ -783,34 +796,81 @@ onMounted(fetchAll)
     display: flex;
     align-items: center;
     gap: 1rem;
+  }
+
+  &__id {
+    flex: 1;
+    min-width: 0;
 
     h1 {
       font-size: 1.25rem;
       margin: 0;
-      flex: 1;
+      line-height: 1.2;
     }
+  }
+
+  &__id-sub {
+    margin: 0.15rem 0 0;
+    font-size: 0.85rem;
+    color: #666;
   }
 
   &__volver {
     white-space: nowrap;
   }
 
-  &__accion {
+  &__acciones {
+    display: flex;
+    gap: 0.5rem;
     white-space: nowrap;
   }
 
-  &__nav {
+  &__afiliado {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.4rem;
+    align-items: center;
+    gap: 0.4rem 1rem;
     margin-top: 0.5rem;
+    padding: 0.4rem 0.6rem;
+    background: #eef4fb;
+    border-radius: 6px;
+    font-size: 0.9rem;
+  }
 
-    button {
-      background: #f0f4f8;
+  &__afiliado-os {
+    font-weight: 600;
+    color: #1a4f8b;
+  }
+
+  &__afiliado-extra {
+    color: #555;
+  }
+
+  &__tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+    margin-top: 0.6rem;
+  }
+
+  &__tab {
+    background: transparent;
+    color: #555;
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    padding: 0.4rem 0.75rem;
+    font-size: 0.9rem;
+    cursor: pointer;
+
+    &:hover {
       color: #1a4f8b;
-      border-color: transparent;
-      padding: 0.25rem 0.6rem;
-      font-size: 0.85rem;
+    }
+
+    &--activo {
+      color: #1a4f8b;
+      font-weight: 600;
+      border-bottom-color: #2d7ff9;
     }
   }
 
@@ -819,22 +879,6 @@ onMounted(fetchAll)
     padding: 1rem;
     border: 1px solid #ddd;
     border-radius: 8px;
-    scroll-margin-top: 5.5rem;
-  }
-
-  &__toggle {
-    cursor: pointer;
-    user-select: none;
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  &__chevron {
-    font-size: 0.75rem;
-    color: #888;
-    width: 0.9rem;
-    display: inline-block;
   }
 
   &__dl {
@@ -1033,8 +1077,85 @@ onMounted(fetchAll)
     }
   }
 
+  &__timeline {
+    list-style: none;
+    margin: 0 0 1rem;
+    padding: 0;
+  }
+
+  &__evento {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid #eee;
+
+    p {
+      margin: 0.2rem 0 0;
+      color: #555;
+    }
+  }
+
+  &__evento-fecha {
+    flex: 0 0 5rem;
+    font-weight: 600;
+    color: #1a4f8b;
+    font-size: 0.9rem;
+  }
+
+  &__evento-cuerpo {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__evento-motivo {
+    display: block;
+  }
+
   &__error {
     color: #c0392b;
+  }
+}
+
+.btn {
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  white-space: nowrap;
+
+  &:focus-visible {
+    outline: 2px solid #2d7ff9;
+    outline-offset: 1px;
+  }
+
+  &--primary {
+    background: #2d7ff9;
+    color: #fff;
+
+    &:hover {
+      background: #1a6ae0;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
+  }
+
+  &--secondary {
+    background: #fff;
+    color: #444;
+    border-color: #ccc;
+
+    &:hover {
+      background: #f5f5f5;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: default;
+    }
   }
 }
 </style>
