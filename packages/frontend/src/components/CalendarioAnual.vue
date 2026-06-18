@@ -12,10 +12,10 @@ export interface EventoFecha {
 const props = defineProps<{ eventos: EventoFecha[] }>()
 const emit = defineEmits<{ (e: 'seleccionar', evento: EventoFecha): void }>()
 
-const TIPOS: Record<EventoFecha['tipo'], { label: string; icon: string; color: string }> = {
-  visita: { label: 'Visita', icon: '🩺', color: '#27ae60' },
-  laboratorio: { label: 'Laboratorio', icon: '🧪', color: '#e67e22' },
-  estudio: { label: 'Estudio', icon: '📷', color: '#2980b9' },
+const TIPOS: Record<EventoFecha['tipo'], { label: string; color: string }> = {
+  visita: { label: 'Visita', color: '#2f9e5f' },
+  laboratorio: { label: 'Laboratorio', color: '#d9822b' },
+  estudio: { label: 'Estudio', color: '#2f7fc4' },
 }
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -90,14 +90,29 @@ function cambiarAnio(delta: number) {
   <div class="cal">
     <div class="cal__header">
       <div class="cal__nav">
-        <button type="button" @click="cambiarAnio(-1)">‹</button>
-        <strong>{{ anio }}</strong>
-        <button type="button" @click="cambiarAnio(1)">›</button>
+        <button
+          type="button"
+          class="cal__nav-btn"
+          aria-label="Año anterior"
+          @click="cambiarAnio(-1)"
+        >
+          <i class="cal__chevron cal__chevron--left" aria-hidden="true"></i>
+        </button>
+        <span class="cal__anio">{{ anio }}</span>
+        <button
+          type="button"
+          class="cal__nav-btn"
+          aria-label="Año siguiente"
+          @click="cambiarAnio(1)"
+        >
+          <i class="cal__chevron cal__chevron--right" aria-hidden="true"></i>
+        </button>
       </div>
+
       <ul class="cal__leyenda">
         <li v-for="(info, tipo) in TIPOS" :key="tipo">
           <span class="cal__dot" :style="{ background: info.color }"></span>
-          {{ info.icon }} {{ info.label }}
+          {{ info.label }}
         </li>
       </ul>
     </div>
@@ -129,20 +144,38 @@ function cambiarAnio(delta: number) {
 
     <!-- Agenda del año (vista principal) -->
     <div class="cal__agenda">
-      <h4>
-        Eventos {{ anio }}
+      <div class="cal__agenda-head">
+        <h4>Eventos {{ anio }}</h4>
         <button v-if="mesSel !== null" type="button" class="cal__filtro" @click="mesSel = null">
-          {{ MESES[mesSel] }} ✕
+          {{ MESES[mesSel] }}
+          <span aria-hidden="true">✕</span>
         </button>
-      </h4>
+      </div>
+
       <p v-if="!agenda.length" class="cal__vacio">
         Sin eventos {{ mesSel !== null ? 'este mes' : 'registrados este año' }}.
       </p>
-      <ul v-else>
-        <li v-for="(e, i) in agenda" :key="i" @click="emit('seleccionar', e)">
+
+      <ul v-else class="cal__lista">
+        <li
+          v-for="(e, i) in agenda"
+          :key="i"
+          class="cal__ev"
+          tabindex="0"
+          @click="emit('seleccionar', e)"
+          @keydown.enter="emit('seleccionar', e)"
+        >
           <span class="cal__dot" :style="{ background: TIPOS[e.tipo].color }"></span>
-          <strong>{{ formatFecha(e.fecha) }}</strong>
-          <span class="cal__ev-icon">{{ TIPOS[e.tipo].icon }}</span>
+          <span class="cal__ev-fecha">{{ formatFecha(e.fecha) }}</span>
+          <span
+            class="cal__ev-tipo"
+            :style="{
+              color: TIPOS[e.tipo].color,
+              borderColor: TIPOS[e.tipo].color,
+            }"
+          >
+            {{ TIPOS[e.tipo].label }}
+          </span>
           <span class="cal__ev-label">{{ e.label }}</span>
         </li>
       </ul>
@@ -157,40 +190,79 @@ function cambiarAnio(delta: number) {
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.5rem 1rem;
+    gap: var(--sp-2) var(--sp-4);
   }
 
   &__nav {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--sp-2);
+  }
 
-    button {
-      width: 1.8rem;
-      height: 1.8rem;
-      line-height: 1;
+  &__nav-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    padding: 0;
+    color: var(--c-text-muted);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border-strong);
+    border-radius: var(--radius-pill);
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+
+    &:hover {
+      background: var(--c-primary-weak);
+      color: var(--c-primary-text);
+      border-color: var(--c-primary-weak-border);
     }
 
-    strong {
-      font-size: 1.1rem;
-      min-width: 3.5rem;
-      text-align: center;
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
     }
+  }
+
+  // Chevron dibujado con bordes: centra perfecto, sin depender de la fuente.
+  &__chevron {
+    width: 0.5rem;
+    height: 0.5rem;
+    border-style: solid;
+    border-width: 2px 2px 0 0; // bordes superior + derecho
+    border-color: currentColor;
+    border-radius: 1px;
+
+    &--left {
+      transform: translateX(1px) rotate(-135deg); // punta hacia la izquierda
+    }
+
+    &--right {
+      transform: translateX(-1px) rotate(45deg); // punta hacia la derecha
+    }
+  }
+
+  &__anio {
+    min-width: 3.5rem;
+    text-align: center;
+    font-size: var(--fs-lg);
+    font-weight: 700;
   }
 
   &__leyenda {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.25rem 1rem;
+    gap: var(--sp-1) var(--sp-4);
     list-style: none;
     margin: 0;
     padding: 0;
-    font-size: 0.8rem;
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
 
     li {
       display: flex;
       align-items: center;
-      gap: 0.3rem;
+      gap: var(--sp-2);
     }
   }
 
@@ -199,37 +271,50 @@ function cambiarAnio(delta: number) {
     width: 0.6rem;
     height: 0.6rem;
     border-radius: 50%;
+    flex: 0 0 auto;
   }
 
   &__tira {
     display: grid;
     grid-template-columns: repeat(12, 1fr);
-    gap: 0.3rem;
-    margin: 1rem 0;
+    gap: var(--sp-2);
+    margin: var(--sp-5) 0;
   }
 
   &__mes {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.25rem;
-    padding: 0.35rem 0.2rem;
-    background: #fafafa;
-    border: 1px solid #eee;
-    border-radius: 6px;
-    color: #999;
-    font-size: 0.7rem;
+    gap: var(--sp-1);
+    min-height: 3.25rem;
+    padding: var(--sp-2) var(--sp-1);
+    background: var(--c-surface-2);
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    color: var(--c-text-faint);
+    font-size: 0.72rem;
+    font-weight: 600;
+    transition: background-color 0.12s, border-color 0.12s, color 0.12s;
 
     &--con {
-      color: #222;
-      background: #fff;
-      border-color: #ddd;
+      color: var(--c-text);
+      background: var(--c-surface);
+      border-color: var(--c-border);
+    }
+
+    &:hover {
+      border-color: var(--c-border-strong);
     }
 
     &--activo {
-      border-color: #2c7be5;
-      box-shadow: 0 0 0 1px #2c7be5 inset;
-      color: #1a4f8b;
+      color: var(--c-primary-text);
+      background: var(--c-primary-weak);
+      border-color: var(--c-primary);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--focus-ring);
     }
   }
 
@@ -240,50 +325,97 @@ function cambiarAnio(delta: number) {
   }
 
   &__agenda {
-    margin-top: 1rem;
+    margin-top: var(--sp-5);
+  }
+
+  &__agenda-head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    margin-bottom: var(--sp-3);
 
     h4 {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      margin: 0 0 0.5rem;
-    }
-
-    ul {
-      list-style: none;
       margin: 0;
-      padding: 0;
-    }
-
-    li {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.4rem 0.25rem;
-      border-bottom: 1px solid #f0f0f0;
-      cursor: pointer;
-
-      &:hover {
-        background: #fafafa;
-      }
+      font-size: var(--fs-base);
     }
   }
 
   &__filtro {
-    background: #eef2f7;
-    color: #1a4f8b;
-    border-color: transparent;
-    padding: 0.1rem 0.5rem;
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1);
+    padding: 0.15rem 0.6rem;
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--c-primary-text);
+    background: var(--c-primary-weak);
+    border: 1px solid var(--c-primary-weak-border);
+    border-radius: var(--radius-pill);
+
+    &:hover {
+      background: var(--c-surface);
+    }
+  }
+
+  &__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  &__ev {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-3) var(--sp-2);
+    border-bottom: 1px solid var(--c-border);
+    cursor: pointer;
+    transition: background-color 0.12s;
+
+    &:last-child {
+      border-bottom: none;
+    }
+
+    &:hover {
+      background: var(--c-surface-2);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: inset 0 0 0 2px var(--c-primary);
+      border-radius: var(--radius-sm);
+    }
+  }
+
+  &__ev-fecha {
+    flex: 0 0 3rem;
+    font-weight: 700;
+    color: var(--c-text);
+  }
+
+  &__ev-tipo {
+    flex: 0 0 auto;
+    padding: 0.05rem 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    border: 1px solid;
+    border-radius: var(--radius-pill);
+    opacity: 0.9;
   }
 
   &__ev-label {
-    color: #444;
+    color: var(--c-text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__vacio {
-    color: #888;
-    font-size: 0.9rem;
+    color: var(--c-text-muted);
+    font-size: var(--fs-sm);
   }
 }
 </style>

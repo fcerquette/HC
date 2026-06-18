@@ -5,6 +5,8 @@ import type { SchemaFicha, CampoFicha } from '@hc/shared'
 import apiClient from '@/api/client'
 import CalendarioAnual from '@/components/CalendarioAnual.vue'
 import type { EventoFecha } from '@/components/CalendarioAnual.vue'
+import DatePicker from '@/components/DatePicker.vue'
+import Modal from '@/components/Modal.vue'
 
 const props = defineProps<{ id: string }>()
 
@@ -76,14 +78,87 @@ const edad = computed<number | null>(() => {
   return e >= 0 ? e : null
 })
 
+// Avatar: iniciales + color estable por paciente (consistente con la lista).
+const iniciales = computed<string>(() => {
+  const p = paciente.value
+  return p ? `${p.apellido?.[0] ?? ''}${p.nombre?.[0] ?? ''}`.toUpperCase() || '?' : '?'
+})
+
+const avatarHue = computed<number>(() => {
+  const p = paciente.value
+  if (!p) return 200
+  const s = `${p.apellido}${p.nombre}`
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360
+  return h
+})
+
+// IMC a partir de peso (kg) y talla (cm o m).
+const imc = computed<string | null>(() => {
+  const peso = parseFloat(String(paciente.value?.peso ?? '').replace(',', '.'))
+  let talla = parseFloat(String(paciente.value?.talla ?? '').replace(',', '.'))
+  if (!peso || !talla) return null
+  if (talla > 3) talla = talla / 100 // viene en cm
+  const v = peso / (talla * talla)
+  return Number.isFinite(v) ? v.toFixed(1) : null
+})
+
+// Fecha de la visita más reciente (para el stat "Última visita").
+const ultimaVisita = computed<string | null>(() => {
+  const fechas = visitas.value.map((v) => String(v.fecha).slice(0, 10)).filter(Boolean).sort()
+  return fechas.length ? fechas[fechas.length - 1] : null
+})
+
 const saving = ref(false)
 const nuevaVisita = ref({ fecha: '', motivo: '', evolucion: '', conducta: '' })
+const formVisitaAbierto = ref(false)
+
+function hoyIso(): string {
+  const d = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
+function abrirNuevaVisita() {
+  tab.value = 'visitas'
+  // La visita arranca con la fecha de hoy por defecto.
+  nuevaVisita.value = { fecha: hoyIso(), motivo: '', evolucion: '', conducta: '' }
+  formVisitaAbierto.value = true
+}
+
+function cancelarVisita() {
+  nuevaVisita.value = { fecha: '', motivo: '', evolucion: '', conducta: '' }
+  formVisitaAbierto.value = false
+}
 
 const editing = ref(false)
 const savingPaciente = ref(false)
 const editForm = ref<Partial<Paciente>>({})
 
 const SEXO_LABEL: Record<string, string> = { M: 'Masculino', F: 'Femenino', X: 'Otro' }
+
+// Datos filiatorios estructurados para el grid del Resumen.
+const datosFiliatorios = computed<{ label: string; value: string }[]>(() => {
+  const p = paciente.value
+  if (!p) return []
+  return [
+    { label: 'DNI', value: p.dni || '' },
+    { label: 'Fecha nac.', value: formatFecha(p.fechaNacimiento) },
+    { label: 'Sexo', value: p.sexo ? SEXO_LABEL[p.sexo] : '' },
+    { label: 'Contacto', value: p.contacto || '' },
+    { label: 'Mail', value: p.mail || '' },
+    { label: 'Dirección', value: p.direccion || '' },
+    { label: 'Localidad', value: p.localidad || '' },
+    { label: 'Obra social', value: p.obraSocial || '' },
+    { label: 'Peso', value: p.peso ? `${p.peso} kg` : '' },
+    { label: 'Talla', value: p.talla || '' },
+  ]
+})
+
+const datosCompletos = computed(() => datosFiliatorios.value.filter((d) => d.value))
+const datosFaltantes = computed(() =>
+  datosFiliatorios.value.filter((d) => !d.value).map((d) => d.label),
+)
 
 // Campos que el backend acepta en el PATCH (el resto los maneja el servidor).
 const CAMPOS_EDITABLES = [
@@ -449,6 +524,7 @@ async function agregarVisita() {
       conducta: nuevaVisita.value.conducta,
     })
     nuevaVisita.value = { fecha: '', motivo: '', evolucion: '', conducta: '' }
+    formVisitaAbierto.value = false
     const { data } = await apiClient.get<Visita[]>(`/pacientes/${props.id}/visitas`)
     visitas.value = data
   } catch (e) {
@@ -468,26 +544,41 @@ onMounted(fetchAll)
 
     <template v-if="paciente">
       <header class="detalle__topbar">
+        <nav class="detalle__breadcrumb" aria-label="Migas de pan">
+          <RouterLink to="/pacientes">Pacientes</RouterLink>
+          <span class="detalle__breadcrumb-sep" aria-hidden="true">›</span>
+          <span class="detalle__breadcrumb-current" aria-current="page">
+            {{ paciente.apellido }}, {{ paciente.nombre }}
+          </span>
+        </nav>
+
         <div class="detalle__topbar-row">
-          <RouterLink to="/pacientes" class="detalle__volver">&larr; Volver</RouterLink>
+          <span
+            class="detalle__avatar"
+            aria-hidden="true"
+            :style="{
+              background: `hsl(${avatarHue} 55% 92%)`,
+              color: `hsl(${avatarHue} 45% 32%)`,
+            }"
+          >
+            {{ iniciales }}
+          </span>
+
           <div class="detalle__id">
             <h1>{{ paciente.apellido }}, {{ paciente.nombre }}</h1>
-            <p class="detalle__id-sub">
-              DNI {{ paciente.dni }}
-              <template v-if="edad !== null"> · {{ edad }} años</template>
-              <template v-if="paciente.sexo"> · {{ SEXO_LABEL[paciente.sexo] }}</template>
+            <p class="detalle__id-meta">
+              <span class="detalle__meta-item">DNI {{ paciente.dni }}</span>
+              <span v-if="edad !== null" class="detalle__meta-item">{{ edad }} años</span>
+              <span v-if="paciente.sexo" class="detalle__meta-item">{{ SEXO_LABEL[paciente.sexo] }}</span>
+              <span class="detalle__chip">{{ paciente.obraSocial || 'Sin obra social' }}</span>
+              <span v-if="paciente.contacto" class="detalle__meta-item">{{ paciente.contacto }}</span>
             </p>
           </div>
+
           <div class="detalle__acciones">
             <button type="button" class="btn btn--secondary" @click="startEdit">Editar</button>
-            <button type="button" class="btn btn--primary" @click="tab = 'visitas'">+ Visita</button>
+            <button type="button" class="btn btn--primary" @click="abrirNuevaVisita">+ Visita</button>
           </div>
-        </div>
-
-        <div class="detalle__afiliado">
-          <span class="detalle__afiliado-os">🏥 {{ paciente.obraSocial || 'Sin obra social' }}</span>
-          <span v-if="paciente.contacto" class="detalle__afiliado-extra">📞 {{ paciente.contacto }}</span>
-          <span v-if="paciente.localidad" class="detalle__afiliado-extra">📍 {{ paciente.localidad }}</span>
         </div>
 
         <nav class="detalle__tabs" role="tablist">
@@ -505,27 +596,54 @@ onMounted(fetchAll)
         </nav>
       </header>
 
-      <!-- ===== RESUMEN: datos filiatorios ===== -->
-      <section v-show="tab === 'resumen'" class="detalle__card">
-        <div class="detalle__card-header">
-          <h2>Datos filiatorios</h2>
-          <button v-if="!editing" type="button" class="btn btn--secondary" @click="startEdit">Editar</button>
+      <!-- ===== RESUMEN: stats + datos filiatorios ===== -->
+      <div v-show="tab === 'resumen'">
+        <div class="detalle__stats">
+          <div class="detalle__stat">
+            <span class="detalle__stat-value">{{ visitas.length }}</span>
+            <span class="detalle__stat-label">Visitas</span>
+          </div>
+          <div class="detalle__stat">
+            <span class="detalle__stat-value">{{ fichas.length }}</span>
+            <span class="detalle__stat-label">Fichas</span>
+          </div>
+          <div class="detalle__stat">
+            <span class="detalle__stat-value">
+              {{ ultimaVisita ? formatFecha(ultimaVisita) : '—' }}
+            </span>
+            <span class="detalle__stat-label">Última visita</span>
+          </div>
+          <div class="detalle__stat">
+            <span class="detalle__stat-value">{{ imc ?? '—' }}</span>
+            <span class="detalle__stat-label">IMC</span>
+          </div>
         </div>
 
-        <dl v-if="!editing" class="detalle__dl">
-          <dt>DNI</dt><dd>{{ paciente.dni }}</dd>
-          <dt>Fecha nac.</dt><dd>{{ formatFecha(paciente.fechaNacimiento) || '—' }}</dd>
-          <dt>Sexo</dt><dd>{{ paciente.sexo ? SEXO_LABEL[paciente.sexo] : '—' }}</dd>
-          <dt>Contacto</dt><dd>{{ paciente.contacto || '—' }}</dd>
-          <dt>Mail</dt><dd>{{ paciente.mail || '—' }}</dd>
-          <dt>Dirección</dt><dd>{{ paciente.direccion || '—' }}</dd>
-          <dt>Localidad</dt><dd>{{ paciente.localidad || '—' }}</dd>
-          <dt>Obra social</dt><dd>{{ paciente.obraSocial || '—' }}</dd>
-          <dt>Peso</dt><dd>{{ paciente.peso || '—' }}</dd>
-          <dt>Talla</dt><dd>{{ paciente.talla || '—' }}</dd>
-        </dl>
+        <section class="detalle__card">
+          <div class="detalle__card-header">
+            <h2>Datos filiatorios</h2>
+          </div>
 
-        <form v-else class="detalle__form detalle__form--grid" @submit.prevent="guardarPaciente">
+          <template v-if="!editing">
+            <dl class="detalle__datos">
+              <div v-for="d in datosCompletos" :key="d.label" class="detalle__dato">
+                <dt>{{ d.label }}</dt>
+                <dd>{{ d.value }}</dd>
+              </div>
+            </dl>
+
+            <p v-if="datosFaltantes.length" class="detalle__faltantes">
+              <span>
+                Datos sin completar:
+                <span class="detalle__faltantes-list">{{ datosFaltantes.join(' · ') }}</span>
+              </span>
+              <button type="button" class="btn btn--ghost btn--sm" @click="startEdit">
+                Completar
+              </button>
+            </p>
+          </template>
+
+          <form v-else class="detalle__form detalle__form--grid" @submit.prevent="guardarPaciente">
           <input v-model="editForm.apellido" placeholder="Apellido" required />
           <input v-model="editForm.nombre" placeholder="Nombre" required />
           <input v-model="editForm.dni" placeholder="DNI" />
@@ -550,7 +668,8 @@ onMounted(fetchAll)
             <button type="button" class="btn btn--secondary" :disabled="savingPaciente" @click="cancelEdit">Cancelar</button>
           </div>
         </form>
-      </section>
+        </section>
+      </div>
 
       <!-- ===== HISTÓRICO: línea de tiempo ===== -->
       <section v-show="tab === 'historico'" class="detalle__card">
@@ -753,7 +872,8 @@ onMounted(fetchAll)
           <h2>Visitas</h2>
         </div>
 
-        <ol class="detalle__timeline">
+        <!-- Listado de visitas -->
+        <ol v-if="visitas.length" class="detalle__timeline">
           <li v-for="v in visitas" :key="v.id" class="detalle__evento">
             <div class="detalle__evento-fecha">{{ formatFecha(v.fecha) }}</div>
             <div class="detalle__evento-cuerpo">
@@ -762,20 +882,45 @@ onMounted(fetchAll)
               <p v-if="v.conducta"><em>Conducta:</em> {{ v.conducta }}</p>
             </div>
           </li>
-          <li v-if="!visitas.length" class="detalle__hint">Sin visitas registradas.</li>
         </ol>
 
-        <form class="detalle__form" @submit.prevent="agregarVisita">
-          <h3>Nueva visita</h3>
-          <input v-model="nuevaVisita.fecha" type="date" required />
-          <input v-model="nuevaVisita.motivo" placeholder="Motivo" required />
-          <textarea v-model="nuevaVisita.evolucion" placeholder="Enfermedad actual" rows="3" />
-          <textarea v-model="nuevaVisita.conducta" placeholder="Conducta" rows="2" />
-          <button type="submit" class="btn btn--primary" :disabled="saving">
-            {{ saving ? 'Guardando...' : 'Agregar visita' }}
-          </button>
-        </form>
+        <!-- Empty state: la acción vive en el "+ Visita" del topbar (siempre visible) -->
+        <div v-else class="detalle__empty">
+          <p class="detalle__empty-text">
+            Todavía no hay visitas registradas. Usá <strong>+ Visita</strong> para agregar la primera.
+          </p>
+        </div>
       </section>
+
+      <!-- Dialog: nueva visita -->
+      <Modal v-model="formVisitaAbierto" title="Nueva visita">
+        <form class="detalle__form" @submit.prevent="agregarVisita">
+          <label class="field">
+            <span>Fecha *</span>
+            <DatePicker v-model="nuevaVisita.fecha" />
+          </label>
+          <label class="field">
+            <span>Motivo *</span>
+            <input v-model="nuevaVisita.motivo" placeholder="Motivo de consulta" required />
+          </label>
+          <label class="field">
+            <span>Enfermedad actual</span>
+            <textarea v-model="nuevaVisita.evolucion" rows="3" placeholder="Evolución, síntomas…" />
+          </label>
+          <label class="field">
+            <span>Conducta</span>
+            <textarea v-model="nuevaVisita.conducta" rows="2" placeholder="Indicaciones, tratamiento…" />
+          </label>
+          <div class="dialog-actions">
+            <button type="button" class="btn btn--secondary" :disabled="saving" @click="cancelarVisita">
+              Cancelar
+            </button>
+            <button type="submit" class="btn btn--primary" :disabled="saving">
+              {{ saving ? 'Guardando...' : 'Guardar visita' }}
+            </button>
+          </div>
+        </form>
+      </Modal>
     </template>
   </section>
 </template>
@@ -786,16 +931,58 @@ onMounted(fetchAll)
     position: sticky;
     top: 0;
     z-index: 10;
-    background: #fff;
-    border-bottom: 1px solid #ddd;
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
     margin: -1.5rem -1.5rem 0;
     padding: 0.6rem 1.5rem;
+  }
+
+  &__breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    margin-bottom: var(--sp-2);
+    font-size: var(--fs-sm);
+
+    a {
+      color: var(--c-text-muted);
+      font-weight: 600;
+
+      &:hover {
+        color: var(--c-primary-text);
+      }
+    }
+  }
+
+  &__breadcrumb-sep {
+    color: var(--c-text-faint);
+  }
+
+  &__breadcrumb-current {
+    color: var(--c-text);
+    font-weight: 600;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   &__topbar-row {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: var(--sp-3);
+  }
+
+  &__avatar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 3rem;
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-pill);
+    font-size: 1.05rem;
+    font-weight: 700;
   }
 
   &__id {
@@ -803,47 +990,47 @@ onMounted(fetchAll)
     min-width: 0;
 
     h1 {
-      font-size: 1.25rem;
+      font-size: var(--fs-lg);
       margin: 0;
       line-height: 1.2;
     }
   }
 
-  &__id-sub {
-    margin: 0.15rem 0 0;
-    font-size: 0.85rem;
-    color: #666;
+  &__id-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sp-2);
+    margin: var(--sp-1) 0 0;
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
   }
 
-  &__volver {
-    white-space: nowrap;
+  &__meta-item {
+    position: relative;
+
+    &:not(:first-child)::before {
+      content: '·';
+      margin-right: var(--sp-2);
+      color: var(--c-text-faint);
+    }
+  }
+
+  &__chip {
+    display: inline-block;
+    padding: 0.1rem 0.55rem;
+    background: var(--c-primary-weak);
+    color: var(--c-primary-text);
+    border: 1px solid var(--c-primary-weak-border);
+    border-radius: var(--radius-pill);
+    font-size: var(--fs-sm);
+    font-weight: 600;
   }
 
   &__acciones {
     display: flex;
-    gap: 0.5rem;
+    gap: var(--sp-2);
     white-space: nowrap;
-  }
-
-  &__afiliado {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.4rem 1rem;
-    margin-top: 0.5rem;
-    padding: 0.4rem 0.6rem;
-    background: #eef4fb;
-    border-radius: 6px;
-    font-size: 0.9rem;
-  }
-
-  &__afiliado-os {
-    font-weight: 600;
-    color: #1a4f8b;
-  }
-
-  &__afiliado-extra {
-    color: #555;
   }
 
   &__tabs {
@@ -855,7 +1042,7 @@ onMounted(fetchAll)
 
   &__tab {
     background: transparent;
-    color: #555;
+    color: var(--c-text-muted);
     border: none;
     border-bottom: 2px solid transparent;
     border-radius: 0;
@@ -864,21 +1051,99 @@ onMounted(fetchAll)
     cursor: pointer;
 
     &:hover {
-      color: #1a4f8b;
+      color: var(--c-primary-text);
     }
 
     &--activo {
-      color: #1a4f8b;
+      color: var(--c-primary-text);
       font-weight: 600;
-      border-bottom-color: #2d7ff9;
+      border-bottom-color: var(--c-primary);
     }
   }
 
   &__card {
-    margin: 1rem 0;
-    padding: 1rem;
-    border: 1px solid #ddd;
-    border-radius: 8px;
+    margin: var(--sp-4) 0;
+    padding: var(--sp-5);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &__stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: var(--sp-3);
+    margin-top: var(--sp-4);
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1);
+    padding: var(--sp-4);
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &__stat-value {
+    font-size: var(--fs-lg);
+    font-weight: 700;
+    color: var(--c-text);
+    line-height: 1.1;
+  }
+
+  &__stat-label {
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  // Grid de datos filiatorios (label arriba, valor abajo).
+  &__datos {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--sp-4);
+    margin: 0;
+  }
+
+  &__dato {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    padding-bottom: var(--sp-2);
+    border-bottom: 1px solid var(--c-border);
+
+    dt {
+      font-size: var(--fs-sm);
+      font-weight: 600;
+      color: var(--c-text-muted);
+    }
+
+    dd {
+      margin: 0;
+      color: var(--c-text);
+    }
+  }
+
+  &__faltantes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--sp-3);
+    margin: var(--sp-4) 0 0;
+    padding-top: var(--sp-4);
+    border-top: 1px dashed var(--c-border);
+    font-size: var(--fs-sm);
+    color: var(--c-text-muted);
+  }
+
+  &__faltantes-list {
+    color: var(--c-text-faint);
   }
 
   &__dl {
@@ -900,7 +1165,7 @@ onMounted(fetchAll)
 
     & + & {
       padding-top: 1rem;
-      border-top: 1px dashed #eee;
+      border-top: 1px dashed var(--c-border);
     }
   }
 
@@ -910,11 +1175,11 @@ onMounted(fetchAll)
 
     li {
       padding: 0.5rem 0;
-      border-bottom: 1px solid #eee;
+      border-bottom: 1px solid var(--c-border);
 
       p {
         margin: 0.25rem 0 0;
-        color: #555;
+        color: var(--c-text-muted);
       }
     }
   }
@@ -941,6 +1206,13 @@ onMounted(fetchAll)
       display: grid;
       grid-template-columns: repeat(2, 1fr);
     }
+
+    &--nueva {
+      margin-top: 0;
+      margin-bottom: var(--sp-5);
+      padding-bottom: var(--sp-5);
+      border-bottom: 1px solid var(--c-border);
+    }
   }
 
   &__seccion {
@@ -952,11 +1224,11 @@ onMounted(fetchAll)
   &__seccion-titulo {
     margin: 0.75rem 0 0.5rem;
     padding-bottom: 0.25rem;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--c-border);
     font-size: 0.8rem;
     text-transform: uppercase;
     letter-spacing: 0.04em;
-    color: #555;
+    color: var(--c-text-muted);
   }
 
   &__campo {
@@ -969,7 +1241,7 @@ onMounted(fetchAll)
       font-weight: 600;
 
       em {
-        color: #c0392b;
+        color: var(--c-danger);
         font-style: normal;
       }
     }
@@ -989,8 +1261,22 @@ onMounted(fetchAll)
   }
 
   &__hint {
-    color: #777;
+    color: var(--c-text-faint);
     font-size: 0.9rem;
+  }
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--sp-3);
+    padding: var(--sp-6) var(--sp-4);
+    text-align: center;
+  }
+
+  &__empty-text {
+    margin: 0;
+    color: var(--c-text-muted);
   }
 
   &__lab {
@@ -1007,21 +1293,21 @@ onMounted(fetchAll)
 
     th,
     td {
-      border: 1px solid #eee;
+      border: 1px solid var(--c-border);
       padding: 0.35rem 0.6rem;
       text-align: left;
       white-space: nowrap;
     }
 
     thead th {
-      background: #f7f7f7;
+      background: var(--c-surface-2);
       position: sticky;
       top: 0;
     }
 
     tbody th {
       font-weight: 600;
-      background: #fafafa;
+      background: var(--c-surface-2);
     }
   }
 
@@ -1029,7 +1315,7 @@ onMounted(fetchAll)
     background: none;
     border: none;
     padding: 0.2rem 0.35rem;
-    color: #1a4f8b;
+    color: var(--c-primary-text);
     cursor: pointer;
     font-size: 0.95rem;
   }
@@ -1051,7 +1337,7 @@ onMounted(fetchAll)
   }
 
   &__chk-anio {
-    border: 1px solid #eee;
+    border: 1px solid var(--c-border);
     border-radius: 6px;
     padding: 0.5rem 0.75rem;
 
@@ -1087,18 +1373,18 @@ onMounted(fetchAll)
     display: flex;
     gap: 0.75rem;
     padding: 0.6rem 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid var(--c-border);
 
     p {
       margin: 0.2rem 0 0;
-      color: #555;
+      color: var(--c-text-muted);
     }
   }
 
   &__evento-fecha {
     flex: 0 0 5rem;
     font-weight: 600;
-    color: #1a4f8b;
+    color: var(--c-primary-text);
     font-size: 0.9rem;
   }
 
@@ -1112,50 +1398,7 @@ onMounted(fetchAll)
   }
 
   &__error {
-    color: #c0392b;
-  }
-}
-
-.btn {
-  padding: 0.45rem 0.9rem;
-  border-radius: 8px;
-  border: 1px solid transparent;
-  cursor: pointer;
-  font: inherit;
-  white-space: nowrap;
-
-  &:focus-visible {
-    outline: 2px solid #2d7ff9;
-    outline-offset: 1px;
-  }
-
-  &--primary {
-    background: #2d7ff9;
-    color: #fff;
-
-    &:hover {
-      background: #1a6ae0;
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
-  }
-
-  &--secondary {
-    background: #fff;
-    color: #444;
-    border-color: #ccc;
-
-    &:hover {
-      background: #f5f5f5;
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: default;
-    }
+    color: var(--c-danger);
   }
 }
 </style>

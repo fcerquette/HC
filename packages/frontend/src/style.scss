@@ -1,10 +1,69 @@
+/* ============================================================
+   Sistema de diseño — Historia Clínica
+   Paleta clínica (teal/azul) con contraste AA, escala de
+   espaciado, radios, sombras y estilos base de componentes.
+   ============================================================ */
+
 :root {
-  --color-text: #1a1a1a;
-  --color-bg: #ffffff;
-  --color-primary: #2c7be5;
-  --color-border: #dddddd;
+  /* --- Color: marca clínica (teal) --- */
+  --c-primary: #0e6e8c;          /* texto blanco encima ≈ 5.8:1 (AA) */
+  --c-primary-hover: #0b5870;
+  --c-primary-active: #094656;
+  --c-primary-text: #0a4f64;     /* links/labels sobre blanco ≈ 6:1 */
+  --c-primary-weak: #e8f4f8;     /* fondos suaves */
+  --c-primary-weak-border: #bfe0ea;
+
+  /* --- Texto --- */
+  --c-text: #15252e;
+  --c-text-muted: #54666f;       /* ≈ 5.6:1 sobre blanco (AA) */
+  --c-text-faint: #79888f;
+
+  /* --- Superficies --- */
+  --c-bg: #f3f6f8;               /* fondo de la app */
+  --c-surface: #ffffff;          /* tarjetas */
+  --c-surface-2: #f5f8fa;        /* zebra / encabezados de tabla */
+  --c-border: #dde4e9;
+  --c-border-strong: #c3cfd6;
+
+  /* --- Semánticos --- */
+  --c-danger: #b5341f;           /* ≈ 6:1 sobre blanco */
+  --c-danger-weak: #fbecea;
+  --c-success: #1f7a4d;
+  --c-warning: #8a5b00;
+
+  /* --- Espaciado (base 4px) --- */
+  --sp-1: 0.25rem;
+  --sp-2: 0.5rem;
+  --sp-3: 0.75rem;
+  --sp-4: 1rem;
+  --sp-5: 1.5rem;
+  --sp-6: 2rem;
+  --sp-8: 3rem;
+
+  /* --- Radios --- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* --- Sombras --- */
+  --shadow-sm: 0 1px 2px rgba(16, 40, 52, 0.06), 0 1px 3px rgba(16, 40, 52, 0.08);
+  --shadow-md: 0 2px 8px rgba(16, 40, 52, 0.08), 0 6px 18px rgba(16, 40, 52, 0.07);
+
+  /* --- Tipografía --- */
+  --fs-sm: 0.85rem;
+  --fs-base: 1rem;
+  --fs-lg: 1.25rem;
+  --fs-xl: 1.5rem;
+
+  /* --- Foco accesible (uniforme) --- */
+  --focus-ring: 0 0 0 3px rgba(14, 110, 140, 0.35);
+
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-size: 16px;
   line-height: 1.5;
+  color: var(--c-text);
+  -webkit-font-smoothing: antialiased;
 }
 
 * {
@@ -15,51 +74,255 @@ html,
 body {
   margin: 0;
   padding: 0;
-  color: var(--color-text);
-  background: var(--color-bg);
+  color: var(--c-text);
+  background: var(--c-bg);
 }
 
 h1,
 h2,
-h3 {
+h3,
+h4 {
   line-height: 1.2;
+  color: var(--c-text);
 }
 
 a {
-  color: var(--color-primary);
+  color: var(--c-primary-text);
   text-decoration: none;
 
   &:hover {
     text-decoration: underline;
   }
+
+  &:focus-visible {
+    outline: none;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--focus-ring);
+  }
 }
+
+/* ============================================================
+   Controles de formulario
+   ============================================================ */
 
 input,
 textarea,
-button,
 select {
   font: inherit;
-  padding: 0.5rem;
-  border: 1px solid var(--color-border);
-  border-radius: 4px;
-}
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  color: var(--c-text);
+  background: var(--c-surface);
+  border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.15s, box-shadow 0.15s;
 
-button {
-  cursor: pointer;
-  background: var(--color-primary);
-  color: #fff;
-  border-color: var(--color-primary);
+  &::placeholder {
+    color: var(--c-text-faint);
+  }
 
-  &:hover:not(:disabled) {
-    opacity: 0.9;
+  &:focus-visible {
+    outline: none;
+    border-color: var(--c-primary);
+    box-shadow: var(--focus-ring);
   }
 
   &:disabled {
-    opacity: 0.5;
+    background: var(--c-surface-2);
+    color: var(--c-text-muted);
     cursor: not-allowed;
   }
 }
 
+input[type='checkbox'],
+input[type='radio'] {
+  width: auto;
+  accent-color: var(--c-primary);
+}
+
+/* Domar el date input nativo para que se sienta del sistema. */
+input[type='date'] {
+  color-scheme: light;
+  position: relative;
+
+  &::-webkit-datetime-edit {
+    color: var(--c-text);
+  }
+
+  // Cuando está vacío, el "dd/mm/aaaa" más tenue (como un placeholder).
+  &:in-range::-webkit-datetime-edit,
+  &:invalid::-webkit-datetime-edit {
+    color: var(--c-text-faint);
+  }
+
+  &::-webkit-calendar-picker-indicator {
+    cursor: pointer;
+    padding: 0.2rem;
+    border-radius: var(--radius-sm);
+    opacity: 0.55;
+    transition: opacity 0.15s, background-color 0.15s;
+
+    &:hover {
+      opacity: 1;
+      background: var(--c-primary-weak);
+    }
+  }
+}
+
+label {
+  color: var(--c-text);
+}
+
+/* Campo etiquetado reutilizable: <label class="field"><span>…</span><input></label> */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  font-size: var(--fs-sm);
+
+  > span {
+    font-weight: 600;
+    color: var(--c-text-muted);
+  }
+}
+
+/* ============================================================
+   Botones (sistema)
+   ============================================================ */
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-2);
+  min-height: 2.5rem;          /* target táctil ≥40px */
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  line-height: 1;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, box-shadow 0.15s,
+    color 0.15s;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  &--primary {
+    background: var(--c-primary);
+    color: #fff;
+
+    &:hover:not(:disabled) {
+      background: var(--c-primary-hover);
+    }
+    &:active:not(:disabled) {
+      background: var(--c-primary-active);
+    }
+  }
+
+  &--secondary {
+    background: var(--c-surface);
+    color: var(--c-text);
+    border-color: var(--c-border-strong);
+
+    &:hover:not(:disabled) {
+      background: var(--c-surface-2);
+      border-color: var(--c-text-faint);
+    }
+  }
+
+  &--ghost {
+    background: transparent;
+    color: var(--c-primary-text);
+
+    &:hover:not(:disabled) {
+      background: var(--c-primary-weak);
+    }
+  }
+
+  &--danger {
+    background: var(--c-danger);
+    color: #fff;
+
+    &:hover:not(:disabled) {
+      filter: brightness(0.94);
+    }
+  }
+
+  &--sm {
+    min-height: 2rem;
+    padding: 0.35rem 0.7rem;
+    font-size: var(--fs-sm);
+  }
+}
+
+/* Botones sin clase .btn (uso heredado): apariencia primaria por defecto. */
+button:not([class]) {
+  min-height: 2.5rem;
+  padding: 0.55rem 1rem;
+  font-weight: 600;
+  color: #fff;
+  background: var(--c-primary);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+
+  &:hover:not(:disabled) {
+    background: var(--c-primary-hover);
+  }
+  &:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}
+
+/* ============================================================
+   Tarjeta y tabla base
+   ============================================================ */
+
+.card {
+  background: var(--c-surface);
+  border: 1px solid var(--c-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--sp-5);
+}
+
+/* Footer de acciones para diálogos: banda full-bleed, divisoria y acciones a la derecha.
+   Pensado para usarse como último hijo del form dentro del .modal__body (padding sp-5). */
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  margin: var(--sp-5) calc(-1 * var(--sp-5)) calc(-1 * var(--sp-5));
+  padding: var(--sp-4) var(--sp-5);
+  border-top: 1px solid var(--c-border);
+
+  @media (max-width: 480px) {
+    flex-direction: column-reverse;
+
+    .btn {
+      width: 100%;
+    }
+  }
+}
+
 table {
-  font-size: 0.95rem;
+  font-size: var(--fs-base);
 }

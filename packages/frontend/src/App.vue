@@ -16,12 +16,20 @@ async function onLogout() {
 
 <template>
   <div class="app">
-    <nav v-if="isAuthenticated" class="app__nav">
-      <RouterLink to="/pacientes">Pacientes</RouterLink>
-      <button class="app__logout" @click="onLogout">Logout</button>
-    </nav>
+    <header v-if="isAuthenticated" class="app__nav">
+      <div class="app__nav-inner">
+        <RouterLink to="/pacientes" class="app__brand">
+          <span class="app__brand-mark" aria-hidden="true">✚</span>
+          <span class="app__brand-text">Historia Clínica</span>
+        </RouterLink>
 
-    <main class="app__main">
+        <button class="btn btn--secondary app__logout" @click="onLogout">
+          Cerrar sesión
+        </button>
+      </div>
+    </header>
+
+    <main class="app__main" :class="{ 'app__main--bare': !isAuthenticated }">
       <RouterView />
     </main>
   </div>
@@ -29,15 +37,74 @@ async function onLogout() {
 
 <style scoped lang="scss">
 .app {
+  min-height: 100vh;
+
   &__nav {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: var(--c-surface);
+    border-bottom: 1px solid var(--c-border);
+    box-shadow: var(--shadow-sm);
+  }
+
+  &__nav-inner {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1.5rem;
-    border-bottom: 1px solid #ddd;
+    gap: var(--sp-5);
+    max-width: 1040px;
+    margin: 0 auto;
+    padding: var(--sp-3) var(--sp-5);
+  }
 
-    a {
-      font-weight: 600;
+  &__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-2);
+    color: var(--c-text);
+    font-weight: 700;
+
+    &:hover {
+      text-decoration: none;
+    }
+  }
+
+  &__brand-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    background: var(--c-primary);
+    color: #fff;
+    border-radius: var(--radius-sm);
+    font-size: 0.95rem;
+  }
+
+  &__brand-text {
+    font-size: 1.05rem;
+  }
+
+  &__links {
+    display: flex;
+    gap: var(--sp-1);
+  }
+
+  &__link {
+    padding: var(--sp-2) var(--sp-3);
+    border-radius: var(--radius-sm);
+    color: var(--c-text-muted);
+    font-weight: 600;
+
+    &:hover {
+      text-decoration: none;
+      background: var(--c-primary-weak);
+      color: var(--c-primary-text);
+    }
+
+    &.router-link-active {
+      background: var(--c-primary-weak);
+      color: var(--c-primary-text);
     }
   }
 
@@ -46,9 +113,16 @@ async function onLogout() {
   }
 
   &__main {
-    max-width: 960px;
+    max-width: 1040px;
     margin: 0 auto;
-    padding: 1.5rem;
+    padding: var(--sp-5);
+
+    // Login (sin sesión): pantalla completa, sin caja ni padding.
+    &--bare {
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
   }
 }
 </style>
